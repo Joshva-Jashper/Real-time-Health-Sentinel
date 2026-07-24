@@ -1,5 +1,7 @@
 import os
 import time
+import json
+import requests
 from enum import Enum
 from dotenv import load_dotenv
 from pydantic import BaseModel, field_validator
@@ -15,6 +17,9 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # Initialize Langfuse v4 client
 langfuse = get_client()
+
+OLLAMA_URL = "http://localhost:11434"
+OLLAMA_MODEL = "testsentry-model"
 
 
 class FailureCategory(str, Enum):
@@ -44,16 +49,95 @@ def get_groq_client():
     return instructor.from_groq(groq_client)
 
 
-def triage_failure(result: dict) -> dict:
-    """
-    Main entry point. Called from plugin.py on every failure.
+def is_ollama_running() -> bool:
+    """Check if Ollama is running locally."""
+    try:
+        response = requests.get(OLLAMA_URL, timeout=2)
+        return response.status_code == 200
+    except Exception:
+        return False
 
-    Flow:
-    1. Generate fingerprint from error
-    2. Check cache — return instantly if found
-    3. Call Groq API if cache miss
-    4. Store result in cache
-    5. Return triage result
+
+def triage_with_ollama(result: dict) -> dict:
+    """
+    Use local fine-tuned model via Ollama.
+    Zero API cost — runs completely offline.
+    """
+    error_msg = result.get("error_msg", "")
+    test_name = result.get("test_name", "")
+
+    if not error_msg:
+        return None
+
+    # Check cache first
+    fp = fingerprint(error_msg)
+    cached = cache_lookup(fp)
+    if cached:
+        print(f"\n[TestSentry] 💾 CACHE HIT — {test_name}")
+        print(f"             Category: {cached['category']}")
+        return cached
+
+    try:
+        print(f"\n[TestSentry] 🤖 LOCAL MODEL — {test_name}")
+
+        response = requests.post(
+            f"{OLLAMA_URL}/api/generate",
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": f"""Analyze this pytest failure and return ONLY valid JSON.
+
+Test: {test_name}
+Error: {error_msg}
+
+Return exactly this JSON structure:
+{{"category": "REAL_BUG or FLAKY or ENV_ISSUE or DATA_ISSUE",
+"confidence_pct": 90,
+"why_it_failed": "plain English explanation",
+"suggested_fix": "exact fix to apply",
+"affected_module": "filename.py"}}""",
+                "stream": False
+            },
+            timeout=60
+        )
+
+        content = response.json()["response"]
+
+        # Extract JSON from response
+        start = content.find("{")
+        end = content.rfind("}") + 1
+        if start == -1 or end == 0:
+            raise ValueError("No JSON found in response")
+
+        triage_dict = json.loads(content[start:end])
+        triage_dict["cache_hit"] = False
+
+        # Validate category
+        valid_categories = ["REAL_BUG", "FLAKY", "ENV_ISSUE", "DATA_ISSUE"]
+        if triage_dict.get("category") not in valid_categories:
+            triage_dict["category"] = "REAL_BUG"
+
+        # Ensure confidence_pct is int
+        triage_dict["confidence_pct"] = int(triage_dict.get("confidence_pct", 85))
+
+        cache_store(fp, triage_dict)
+
+        print(f"             Category:   {triage_dict['category']}")
+        print(f"             Confidence: {triage_dict['confidence_pct']}%")
+        print(f"             Why:        {triage_dict['why_it_failed']}")
+        print(f"             Fix:        {triage_dict['suggested_fix']}")
+
+        return triage_dict
+
+    except Exception as e:
+        print(f"\n[TestSentry] ⚠️ Local model error: {e}")
+        print(f"             Falling back to Groq API")
+        return triage_with_groq(result)
+
+
+def triage_with_groq(result: dict) -> dict:
+    """
+    Use Groq API for triage.
+    Fallback when Ollama is not running.
     """
     error_msg = result.get("error_msg", "")
     test_name = result.get("test_name", "")
@@ -65,16 +149,12 @@ def triage_failure(result: dict) -> dict:
     if not error_msg:
         return None
 
-    
     fp = fingerprint(error_msg)
-
-    
     cached = cache_lookup(fp)
     if cached:
         print(f"\n[TestSentry] 💾 CACHE HIT — {test_name}")
         print(f"             Category: {cached['category']}")
 
-        
         try:
             with langfuse.start_as_current_observation(
                 as_type="span",
@@ -91,7 +171,7 @@ def triage_failure(result: dict) -> dict:
 
         return cached
 
-    print(f"\n[TestSentry] 🤖 AI TRIAGE — {test_name}")
+    print(f"\n[TestSentry] 🤖 GROQ API — {test_name}")
 
     try:
         client = get_groq_client()
@@ -126,7 +206,6 @@ Return a structured triage with category, confidence as a plain integer
 
         latency_ms = round((time.time() - start_time) * 1000, 2)
 
-        # Safely handle category
         try:
             category_value = triage.category.value if isinstance(triage.category, Enum) else str(triage.category)
         except Exception:
@@ -172,3 +251,29 @@ Return a structured triage with category, confidence as a plain integer
         print(f"\n[TestSentry] ⚠️ Triage error: {type(e).__name__}: {str(e)}")
         print(f"             Skipping AI analysis for this failure")
         return None
+
+
+def triage_failure(result: dict) -> dict:
+    """
+    Main entry point. Auto-selects best available backend.
+
+    Priority:
+    1. Local Ollama model (testsentry-model) — zero cost, offline
+    2. Groq API — free tier, requires API key
+    3. Skip — no backend available
+    """
+    # Try local model first
+    if is_ollama_running():
+        print(f"[TestSentry] 🏠 Using local fine-tuned model")
+        return triage_with_ollama(result)
+
+    # Fall back to Groq
+    if os.getenv("GROQ_API_KEY"):
+        print(f"[TestSentry] ☁️  Ollama not running — using Groq API")
+        return triage_with_groq(result)
+
+    # No backend available
+    print("\n[TestSentry] ⚠️ No AI backend available.")
+    print("             Start Ollama: ollama serve")
+    print("             Or set GROQ_API_KEY in .env")
+    return None
