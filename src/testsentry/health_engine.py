@@ -23,7 +23,10 @@ def calculate_health_score(run_id: str) -> dict:
         WHERE run_id = ?
     """, [run_id]).fetchone()
 
-    avg_duration = speed_row[0] if speed_row[0] else 0
+    try:
+        avg_duration = float(speed_row[0]) if (speed_row and speed_row[0] is not None) else 0.0
+    except (ValueError, TypeError):
+        avg_duration = 0.0
 
     if avg_duration < 0.1:
         speed_score = 20      
@@ -46,8 +49,11 @@ def calculate_health_score(run_id: str) -> dict:
         WHERE run_id = ?
     """, [run_id]).fetchone()
 
-    total = stability_row[0] if stability_row[0] else 1
-    passed = stability_row[1] if stability_row[1] else 0
+    try:
+        total = int(stability_row[0]) if (stability_row and stability_row[0] is not None) else 1
+        passed = int(stability_row[1]) if (stability_row and len(stability_row) > 1 and stability_row[1] is not None) else 0
+    except (ValueError, TypeError, IndexError):
+        total, passed = 1, 0
     pass_rate = (passed / total) * 100 if total > 0 else 0
 
     if pass_rate >= 95:
@@ -73,7 +79,10 @@ def calculate_health_score(run_id: str) -> dict:
         )
     """).fetchone()
 
-    flaky_count = flaky_row[0] if flaky_row[0] else 0
+    try:
+        flaky_count = int(flaky_row[0]) if (flaky_row and flaky_row[0] is not None) else 0
+    except (ValueError, TypeError):
+        flaky_count = 0
 
     if flaky_count == 0:
         flakiness_score = 20
@@ -87,30 +96,35 @@ def calculate_health_score(run_id: str) -> dict:
         flakiness_score = 0
 
   
-    
-    
-    coverage_row = conn.execute("""
-        SELECT
-            COUNT(*) as total,
-            SUM(CASE WHEN label = 'STABLE' THEN 1 ELSE 0 END) as stable
-        FROM test_runs
-        WHERE run_id = ?
-    """, [run_id]).fetchone()
-
-    total_c = coverage_row[0] if coverage_row[0] else 1
-    stable = coverage_row[1] if coverage_row[1] else 0
-    stable_rate = (stable / total_c) * 100 if total_c > 0 else 0
-
-    if stable_rate >= 90:
-        coverage_score = 20
-    elif stable_rate >= 75:
-        coverage_score = 15
-    elif stable_rate >= 60:
-        coverage_score = 10
-    elif stable_rate >= 40:
-        coverage_score = 5
+    # Code coverage score:
+    from testsentry.coverage_analyzer import get_coverage_summary, get_coverage_score
+    cov_summary = get_coverage_summary()
+    if cov_summary.get("total_pct", 0) > 0:
+        coverage_score = get_coverage_score()
     else:
-        coverage_score = 0
+        # Fallback if coverage.json is not present
+        coverage_row = conn.execute("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN label = 'STABLE' THEN 1 ELSE 0 END) as stable
+            FROM test_runs
+            WHERE run_id = ?
+        """, [run_id]).fetchone()
+
+        total_c = coverage_row[0] if (coverage_row and coverage_row[0] is not None) else 1
+        stable = coverage_row[1] if (coverage_row and coverage_row[1] is not None) else 0
+        stable_rate = (stable / total_c) * 100 if total_c > 0 else 0
+
+        if stable_rate >= 90:
+            coverage_score = 20
+        elif stable_rate >= 75:
+            coverage_score = 15
+        elif stable_rate >= 60:
+            coverage_score = 10
+        elif stable_rate >= 40:
+            coverage_score = 5
+        else:
+            coverage_score = 0
 
     
     # Ratio of new_failing tests — fewer = better quality:
@@ -121,7 +135,10 @@ def calculate_health_score(run_id: str) -> dict:
         AND label = 'NEWLY_FAILING'
     """, [run_id]).fetchone()
 
-    newly_failing = quality_row[0] if quality_row[0] else 0
+    try:
+        newly_failing = int(quality_row[0]) if (quality_row and quality_row[0] is not None) else 0
+    except (ValueError, TypeError):
+        newly_failing = 0
 
     if newly_failing == 0:
         quality_score = 20
@@ -134,7 +151,7 @@ def calculate_health_score(run_id: str) -> dict:
     else:
         quality_score = 0
 
-    conn.close()
+    pass  # shared connection — do not close
     
     # Get detailed flakiness metrics
     flakiness_summary = get_flakiness_summary(run_id)

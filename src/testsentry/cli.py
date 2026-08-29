@@ -21,7 +21,7 @@ def scan(output, runs):
         ORDER BY timestamp DESC
         LIMIT 1
     """).fetchone()
-    conn.close()
+    pass  # shared connection — do not close
 
     if not row:
         click.echo("[TestSentry] ⚠️  No runs found. Run pytest first.")
@@ -46,7 +46,7 @@ def status(runs):
         ORDER BY timestamp DESC
         LIMIT ?
     """, [runs]).fetchall()
-    conn.close()
+    pass  # shared connection — do not close
 
     if not rows:
         click.echo("[TestSentry] ⚠️  No test runs found. Run pytest first.")
@@ -106,7 +106,7 @@ def history():
         ORDER BY started DESC
         LIMIT 10
     """).fetchall()
-    conn.close()
+    pass  # shared connection — do not close
 
     if not runs:
         click.echo("[TestSentry] ⚠️  No runs found. Run pytest first.")
@@ -216,6 +216,92 @@ def coverage():
             f"{data['missing']:<10} "
             f"{icon} {data['pct']}%"
         )    
+
+
+
+def _free_port_if_in_use(port: int):
+    """Check if port is in use and auto-kill stale processes on that port."""
+    import os
+    import signal
+    import subprocess
+
+    current_pid = str(os.getpid())
+    # Try fuser -k first
+    try:
+        subprocess.run(f"fuser -k {port}/tcp", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+    # Backup check with lsof
+    try:
+        output = subprocess.check_output(f"lsof -t -i:{port}", shell=True, text=True).strip()
+        if output:
+            for pid in output.split():
+                if pid != current_pid:
+                    try:
+                        os.kill(int(pid), signal.SIGKILL)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+
+
+@cli.command()
+@click.option('--port', default=8088, help='Port to run the dashboard on')
+@click.option('--host', default='0.0.0.0', help='Host to bind to')
+def dashboard(port, host):
+    """Launch the TestSentry web dashboard (FastAPI + beautiful UI)."""
+    import signal
+    import sys
+
+    # Handle Ctrl+Z (SIGTSTP) to terminate cleanly instead of suspending process
+    def _on_signal_exit(signum, frame):
+        click.echo("\n[TestSentry] 🛑 Shutdown signal received. Terminating dashboard process...")
+        sys.exit(0)
+
+    for sig in [signal.SIGINT, signal.SIGTERM]:
+        try:
+            signal.signal(sig, _on_signal_exit)
+        except Exception:
+            pass
+
+    if hasattr(signal, 'SIGTSTP'):
+        try:
+            signal.signal(signal.SIGTSTP, _on_signal_exit)
+        except Exception:
+            pass
+
+    # Auto-kill any stale process holding the port before starting
+    _free_port_if_in_use(port)
+
+    try:
+        import uvicorn
+    except ImportError:
+        click.echo("[TestSentry] ⚠️  uvicorn not installed. Run: pip install uvicorn fastapi")
+        return
+
+    click.echo(f"[TestSentry] 🚀 Starting dashboard at http://{host}:{port}")
+    click.echo(f"[TestSentry] 🌐 Open http://localhost:{port} in your browser")
+    click.echo(f"[TestSentry] 🤖 AI model: qwen2.5-coder:7b via Ollama")
+    click.echo(f"[TestSentry] Press Ctrl+C or Ctrl+Z to exit cleanly")
+    try:
+        uvicorn.run("testsentry.api:app", host=host, port=port, reload=False)
+    except OSError as e:
+        if getattr(e, 'errno', None) == 98 or "address already in use" in str(e).lower():
+            # Retry auto-clear once
+            _free_port_if_in_use(port)
+            try:
+                uvicorn.run("testsentry.api:app", host=host, port=port, reload=False)
+                return
+            except Exception:
+                pass
+            click.echo(f"\n[TestSentry] ⚠️  Port {port} is already in use by another application.")
+            click.echo(f"[TestSentry] 💡 Open http://localhost:{port} in your browser, or run on a different port:")
+            click.echo(f"             testsentry dashboard --port {port + 1}")
+        else:
+            raise
+
 
 
 

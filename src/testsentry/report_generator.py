@@ -12,20 +12,23 @@ def get_ai_stats(run_id: str) -> dict:
     """Get AI triage statistics for this run."""
     conn = get_connection()
 
-    total_failures = conn.execute("""
+    res1 = conn.execute("""
         SELECT COUNT(*) FROM test_runs
         WHERE run_id = ? AND status = 'FAILED'
-    """, [run_id]).fetchone()[0]
+    """, [run_id]).fetchone()
+    total_failures = res1[0] if (res1 and res1[0] is not None) else 0
 
-    cache_hits = conn.execute("""
+    res2 = conn.execute("""
         SELECT SUM(hit_count) FROM triage_cache
-    """).fetchone()[0] or 0
+    """).fetchone()
+    cache_hits = res2[0] if (res2 and res2[0] is not None) else 0
 
-    api_calls = conn.execute("""
+    res3 = conn.execute("""
         SELECT COUNT(*) FROM triage_cache
-    """).fetchone()[0]
+    """).fetchone()
+    api_calls = res3[0] if (res3 and res3[0] is not None) else 0
 
-    conn.close()
+    pass  # shared connection — do not close
 
     return {
         "total_failures": total_failures,

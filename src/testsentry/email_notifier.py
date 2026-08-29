@@ -17,12 +17,15 @@ def send_email_notification(
     newly_failing: list,
     fixed: list,
     health_score: dict,
-    repo_name: str = "TestSentry"
+    repo_name: str = "TestSentry",
+    to_email: str = None
 ) -> bool:
     """
     Send email notification with test run summary.
     Called after pytest session finishes.
     """
+    recipient = to_email or EMAIL_TO
+
     if not EMAIL_FROM or not EMAIL_PASSWORD:
         print("[TestSentry] ⚠️  EMAIL_FROM or EMAIL_PASSWORD not set — skipping")
         return False
@@ -43,7 +46,8 @@ def send_email_notification(
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"]    = EMAIL_FROM
-        msg["To"]      = EMAIL_TO
+        msg["To"]      = recipient
+
 
         # Plain text version
         text_part = MIMEText(build_plain_text(

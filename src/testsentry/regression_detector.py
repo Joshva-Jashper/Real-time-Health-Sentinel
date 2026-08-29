@@ -28,7 +28,7 @@ def label_test(result: dict, run_id: str) -> str:
         LIMIT 1
     """, [test_name, run_id]).fetchone()
 
-    conn.close()
+    pass  # shared connection — do not close
 
     if not prev:
         return "NEWLY_FAILING" if current_status == "FAILED" else "NEW_TEST"
@@ -62,7 +62,7 @@ def get_regression_summary(run_id: str) -> dict:
         GROUP BY label
     """, [run_id]).fetchall()
 
-    conn.close()
+    pass  # shared connection — do not close
 
    
     summary = {
@@ -75,8 +75,9 @@ def get_regression_summary(run_id: str) -> dict:
     }
 
     for row in rows:
-        label, count = row
-        if label in summary:
-            summary[label] = count
+        if len(row) >= 2:
+            label, count = row[0], row[1]
+            if label in summary:
+                summary[label] = count
 
     return summary

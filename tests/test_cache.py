@@ -42,7 +42,7 @@ def test_cache_hit_count_increments():
         SELECT hit_count FROM triage_cache
         WHERE fingerprint = ?
     """, [SAMPLE_FINGERPRINT]).fetchone()
-    conn.close()
+    # Do NOT close — this is a shared thread-local connection managed by collector
 
     assert row[0] >= 2
 

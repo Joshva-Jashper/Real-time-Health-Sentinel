@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TestSentry — Intelligent Test Health Monitor</title>
+  <meta name="description" content="Real-time test suite health monitoring with AI triage, flakiness detection, and ownership mapping." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-logo">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V7L12 2z" fill="url(#lg1)"/><defs><linearGradient id="lg1" x1="3" y1="2" x2="21" y2="23.35" gradientUnits="userSpaceOnUse"><stop stop-color="#6c63ff"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs></svg>
+    </div>
+    <span class="brand-name">TestSentry</span>
+    <span class="brand-version">v2.1</span>
+  </div>
+
+  <nav class="sidebar-nav">
+    <button class="nav-item active" data-tab="overview" onclick="switchTab('overview',this)" id="nav-overview">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span>Overview</span>
+    </button>
+    <button class="nav-item" data-tab="tests" onclick="switchTab('tests',this)" id="nav-tests">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2v-4M9 21H5a2 2 0 01-2-2v-4m0 0h18"/></svg>
+      <span>Test Results</span>
+    </button>
+    <button class="nav-item" data-tab="flaky" onclick="switchTab('flaky',this)" id="nav-flaky">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      <span>Flakiness</span>
+    </button>
+    <button class="nav-item" data-tab="risk" onclick="switchTab('risk',this)" id="nav-risk">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span>Risk & Ownership</span>
+    </button>
+    <button class="nav-item" data-tab="ai" onclick="switchTab('ai',this)" id="nav-ai">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+      <span>AI Triage</span>
+    </button>
+    <button class="nav-item" data-tab="history" onclick="switchTab('history',this)" id="nav-history">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <span>History</span>
+    </button>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="ai-model-badge">
+      <span class="model-dot"></span>
+      <span id="model-label">testsentry-model</span>
+    </div>
+    <div class="sidebar-status" id="sidebar-status">Live</div>
+  </div>
+</aside>
+
+<main class="main">
+  <header class="topbar">
+    <div class="topbar-left">
+      <h1 class="page-title" id="page-title">Overview</h1>
+      <span class="run-badge" id="run-badge">Loading…</span>
+    </div>
+    <div class="topbar-right">
+      <label class="toggle-wrap" title="Auto-refresh every 5s">
+        <input type="checkbox" id="auto-refresh-toggle" onchange="toggleAutoRefresh(this)" />
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        <span class="toggle-label">Live</span>
+      </label>
+      <div class="run-selector-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14"/><path d="M4.93 4.93a10 10 0 000 14.14"/></svg>
+        <select id="run-selector" onchange="onRunChange()"><option value="">Loading…</option></select>
+      </div>
+      <button class="icon-btn refresh-btn" onclick="loadAll()" title="Refresh">
+        <svg id="refresh-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── OVERVIEW ── -->
+  <section class="tab-content active" id="tab-overview">
+    <div class="overview-hero">
+      <div class="hero-ring-col">
+        <div class="score-ring-wrap">
+          <canvas id="scoreRing" width="200" height="200"></canvas>
+          <div class="score-center">
+            <div class="score-num" id="score-num">—</div>
+            <div class="score-label">/ 100</div>
+          </div>
+        </div>
+        <div class="grade-badge" id="grade-badge">—</div>
+      </div>
+      <div class="hero-stats-col">
+        <div class="hero-stat-card" id="hero-pass">
+          <div class="hsc-icon green-glow">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div class="hsc-body">
+            <div class="hsc-val" id="score-pass-val">—</div>
+            <div class="hsc-lbl">Pass Rate</div>
+          </div>
+        </div>
+        <div class="hero-stat-card" id="hero-flaky">
+          <div class="hsc-icon yellow-glow">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+          <div class="hsc-body">
+            <div class="hsc-val" id="score-flaky-val">—</div>
+            <div class="hsc-lbl">Flaky Tests</div>
+          </div>
+        </div>
+        <div class="hero-stat-card" id="hero-dur">
+          <div class="hsc-icon blue-glow">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <div class="hsc-body">
+            <div class="hsc-val" id="score-dur-val">—</div>
+            <div class="hsc-lbl">Avg Duration</div>
+          </div>
+        </div>
+      </div>
+      <div class="hero-dims-col">
+        <div class="dim-row" id="dim-speed">
+          <div class="dim-label"><span class="dim-icon">⚡</span>Speed</div>
+          <div class="dim-bar-wrap"><div class="dim-bar-bg"><div class="dim-bar-fill" style="width:0%"></div></div></div>
+          <div class="dim-score-val">—/20</div>
+        </div>
+        <div class="dim-row" id="dim-stability">
+          <div class="dim-label"><span class="dim-icon">📊</span>Stability</div>
+          <div class="dim-bar-wrap"><div class="dim-bar-bg"><div class="dim-bar-fill" style="width:0%"></div></div></div>
+          <div class="dim-score-val">—/20</div>
+        </div>
+        <div class="dim-row" id="dim-flakiness">
+          <div class="dim-label"><span class="dim-icon">🎲</span>Flakiness</div>
+          <div class="dim-bar-wrap"><div class="dim-bar-bg"><div class="dim-bar-fill" style="width:0%"></div></div></div>
+          <div class="dim-score-val">—/20</div>
+        </div>
+        <div class="dim-row" id="dim-coverage">
+          <div class="dim-label"><span class="dim-icon">📚</span>Coverage</div>
+          <div class="dim-bar-wrap"><div class="dim-bar-bg"><div class="dim-bar-fill" style="width:0%"></div></div></div>
+          <div class="dim-score-val">—/20</div>
+        </div>
+        <div class="dim-row" id="dim-quality">
+          <div class="dim-label"><span class="dim-icon">✨</span>Quality</div>
+          <div class="dim-bar-wrap"><div class="dim-bar-bg"><div class="dim-bar-fill" style="width:0%"></div></div></div>
+          <div class="dim-score-val">—/20</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title-row">
+          <h2 class="card-title">Regression Summary</h2>
+          <span class="card-title-icon">📈</span>
+        </div>
+        <div class="regression-grid" id="regression-grid">
+          <div class="reg-item newly"><div class="reg-num" id="reg-nf">—</div><div class="reg-lbl">Newly Failing</div></div>
+          <div class="reg-item fixed"><div class="reg-num" id="reg-fx">—</div><div class="reg-lbl">Fixed</div></div>
+          <div class="reg-item still"><div class="reg-num" id="reg-sf">—</div><div class="reg-lbl">Still Failing</div></div>
+          <div class="reg-item stable"><div class="reg-num" id="reg-st">—</div><div class="reg-lbl">Stable</div></div>
+          <div class="reg-item new"><div class="reg-num" id="reg-nt">—</div><div class="reg-lbl">New Tests</div></div>
+          <div class="reg-item reopened"><div class="reg-num" id="reg-ro">—</div><div class="reg-lbl">Reopened</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title-row">
+          <h2 class="card-title">AI Triage Stats</h2>
+          <span class="card-title-icon">🤖</span>
+        </div>
+        <div class="ai-stat-list" id="ai-stat-list">
+          <div class="ai-stat-row"><span>Total Failures</span><span class="ai-val" id="ai-total">—</span></div>
+          <div class="ai-stat-row"><span>Cache Hits</span><span class="ai-val green" id="ai-hits">—</span></div>
+          <div class="ai-stat-row"><span>API Calls</span><span class="ai-val yellow" id="ai-calls">—</span></div>
+          <div class="ai-stat-row"><span>Cache Efficiency</span><span class="ai-val accent" id="ai-eff">—</span></div>
+        </div>
+        <div class="cache-bar-wrap">
+          <div class="cache-bar-bg"><div class="cache-bar-fill" id="cache-bar-fill" style="width:0%"></div></div>
+          <span class="cache-bar-label" id="cache-bar-label">0% savings</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── TESTS ── -->
+  <section class="tab-content" id="tab-tests">
+    <div class="card">
+      <div class="card-header-row">
+        <div class="card-title-row"><h2 class="card-title">Test Results</h2><span class="card-title-icon">🧪</span></div>
+        <div class="filter-row">
+          <div class="search-wrap">
+            <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="test-search" class="search-input" placeholder="Search tests…" oninput="filterTests()" />
+          </div>
+          <select id="status-filter" class="select-sm" onchange="filterTests()">
+            <option value="">All Status</option>
+            <option value="PASSED">Passed</option>
+            <option value="FAILED">Failed</option>
+          </select>
+          <select id="label-filter" class="select-sm" onchange="filterTests()">
+            <option value="">All Labels</option>
+            <option value="NEWLY_FAILING">Newly Failing</option>
+            <option value="FIXED">Fixed</option>
+            <option value="STILL_FAILING">Still Failing</option>
+            <option value="STABLE">Stable</option>
+            <option value="NEW_TEST">New Test</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="tests-table">
+          <thead><tr><th>Test Name</th><th>Status</th><th>Label</th><th>Duration</th><th>Error</th><th>Action</th></tr></thead>
+          <tbody id="tests-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FLAKINESS ── -->
+  <section class="tab-content" id="tab-flaky">
+    <div class="stat-cards-row" id="flaky-summary-row">
+      <div class="stat-card red-card">
+        <div class="stat-card-icon">🔴</div>
+        <div class="stat-card-val" id="fl-critical">—</div>
+        <div class="stat-card-lbl">Critical Flaky</div>
+      </div>
+      <div class="stat-card orange-card">
+        <div class="stat-card-icon">🟠</div>
+        <div class="stat-card-val" id="fl-high">—</div>
+        <div class="stat-card-lbl">High Flaky</div>
+      </div>
+      <div class="stat-card yellow-card">
+        <div class="stat-card-icon">🟡</div>
+        <div class="stat-card-val" id="fl-medium">—</div>
+        <div class="stat-card-lbl">Medium Flaky</div>
+      </div>
+      <div class="stat-card purple-card">
+        <div class="stat-card-icon">📊</div>
+        <div class="stat-card-val" id="fl-avg">—</div>
+        <div class="stat-card-lbl">Avg Flakiness</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title-row"><h2 class="card-title">Flaky Test Leaderboard</h2><span class="card-title-icon">🎲</span></div>
+      <div class="table-wrap">
+        <table class="data-table" id="flaky-table">
+          <thead><tr><th>#</th><th>Test Name</th><th>Fail %</th><th>Rating</th><th>Total Runs</th><th>Passed</th><th>Transitions</th><th>Trend</th></tr></thead>
+          <tbody id="flaky-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── RISK ── -->
+  <section class="tab-content" id="tab-risk">
+    <div class="card">
+      <div class="card-title-row"><h2 class="card-title">At-Risk Modules — Who Needs to Act</h2><span class="card-title-icon">⚠️</span></div>
+      <div class="table-wrap">
+        <table class="data-table" id="risk-table">
+          <thead><tr><th>File</th><th>Owner</th><th>Changes</th><th>Failures</th><th>Risk Score</th><th>Risk Level</th></tr></thead>
+          <tbody id="risk-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── AI TRIAGE ── -->
+  <section class="tab-content" id="tab-ai">
+    <div class="card">
+      <div class="card-title-row"><h2 class="card-title">AI Triage Cache</h2><span class="card-title-icon">🤖</span></div>
+      <p class="card-sub">Cached results from testsentry-model (llama3.2) · Sorted by hit count</p>
+      <div class="table-wrap">
+        <table class="data-table" id="ai-table">
+          <thead><tr><th>Fingerprint</th><th>Category</th><th>Confidence</th><th>Why It Failed</th><th>Suggested Fix</th><th>Module</th><th>Hits</th></tr></thead>
+          <tbody id="ai-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── HISTORY ── -->
+  <section class="tab-content" id="tab-history">
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title-row"><h2 class="card-title">Health Score Trend</h2><span class="card-title-icon">📈</span></div>
+        <div class="chart-wrap"><canvas id="historyChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title-row"><h2 class="card-title">Pass Rate Over Time</h2><span class="card-title-icon">✅</span></div>
+        <div class="chart-wrap"><canvas id="passRateChart"></canvas></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:20px">
+      <div class="card-title-row"><h2 class="card-title">All Runs</h2><span class="card-title-icon">📋</span></div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Run ID</th><th>Started</th><th>Score</th><th>Grade</th><th>Pass Rate</th><th>Flaky</th></tr></thead>
+          <tbody id="history-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast"></div>
+<div id="triage-modal" class="modal-overlay" onclick="closeModal(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 class="modal-title">🤖 AI Triage Result</h3>
+      <button class="modal-close" onclick="document.getElementById('triage-modal').classList.remove('open')">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

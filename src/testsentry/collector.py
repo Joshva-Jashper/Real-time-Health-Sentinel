@@ -1,14 +1,54 @@
 import duckdb
 import os
+import threading
 from datetime import datetime
+from testsentry.fingerprinter import fingerprint
 
 
 DB_PATH = os.path.join(os.getcwd(), "testsentry.db")
 
+# One write connection for the collector/plugin (protected by a lock)
+_write_lock = threading.Lock()
+_write_conn: duckdb.DuckDBPyConnection | None = None
 
-def get_connection():
-    """Get a connection to the TestSentry database."""
-    return duckdb.connect(DB_PATH)
+# Thread-local read connections for the API layer
+_thread_local = threading.local()
+
+
+def _get_write_conn() -> duckdb.DuckDBPyConnection:
+    """Return the single write connection (used only by collector/init)."""
+    global _write_conn
+    with _write_lock:
+        if _write_conn is None:
+            _write_conn = duckdb.connect(DB_PATH, read_only=False)
+        return _write_conn
+
+
+def get_connection(read_only: bool = False) -> duckdb.DuckDBPyConnection:
+    """
+    Return a per-thread DuckDB connection.
+
+    Each OS thread (FastAPI worker thread / pytest main thread) gets its own
+    private connection so that concurrent .execute() calls never corrupt each
+    other's result sets.  The connection is lazily created and automatically
+    re-opened if it was closed (e.g., by test code calling conn.close()).
+    """
+    conn = getattr(_thread_local, "conn", None)
+    if conn is not None:
+        # Probe the connection — if it was closed externally, re-open it.
+        try:
+            conn.execute("SELECT 1").fetchone()
+        except Exception:
+            conn = None
+            _thread_local.conn = None
+
+    if conn is None:
+        try:
+            conn = duckdb.connect(DB_PATH, read_only=False)
+        except Exception:
+            conn = duckdb.connect(DB_PATH, read_only=True)
+        _thread_local.conn = conn
+    return conn
 
 
 def init_db():
@@ -24,10 +64,17 @@ def init_db():
             status      VARCHAR,
             duration    FLOAT,
             error_msg   VARCHAR,
+            fingerprint VARCHAR,
             label       VARCHAR DEFAULT 'STABLE',
             timestamp   TIMESTAMP
         )
     """)
+    # Add fingerprint column if DB existed prior to this update
+    try:
+        conn.execute("ALTER TABLE test_runs ADD COLUMN fingerprint VARCHAR")
+    except Exception:
+        pass
+
     conn.execute("""
         CREATE TABLE IF NOT EXISTS run_metadata (
             run_id      VARCHAR,
@@ -50,7 +97,23 @@ def init_db():
             created_at      TIMESTAMP
         )
     """)
-    conn.close()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS triage_cache_lock (dummy INTEGER)
+    """)
+    # Migrate triage_cache to ensure all expected columns exist
+    for col_def in [
+        ("confidence_pct",  "INTEGER DEFAULT 0"),
+        ("why_it_failed",   "VARCHAR"),
+        ("suggested_fix",   "VARCHAR"),
+        ("affected_module", "VARCHAR"),
+        ("hit_count",       "INTEGER DEFAULT 0"),
+        ("created_at",      "TIMESTAMP"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE triage_cache ADD COLUMN {col_def[0]} {col_def[1]}")
+        except Exception:
+            pass  # column already exists
+    pass  # shared connection — do not close
     print("[TestSentry] Database initialized at testsentry.db")
 
 
@@ -60,20 +123,35 @@ def store_result(result: dict, run_id: str, label: str = "NEW_TEST"):
     Called after every test finishes.
     """
     conn = get_connection()
+    fp = fingerprint(result["error_msg"]) if result.get("error_msg") else None
     conn.execute("""
         INSERT INTO test_runs
-            (run_id, test_name, status, duration, error_msg, label, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            (run_id, test_name, status, duration, error_msg, fingerprint, label, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, [
         run_id,
         result["test_name"],
         result["status"],
         result["duration"],
         result["error_msg"],
+        fp,
         label,
         datetime.now()
     ])
-    conn.close()
+    pass  # shared connection — do not close
+
+
+def store_run_metadata(run_id: str, started_at: datetime, finished_at: datetime, total: int, passed: int, failed: int):
+    """
+    Record complete run session metadata in DuckDB.
+    """
+    conn = get_connection()
+    conn.execute("""
+        INSERT INTO run_metadata
+            (run_id, started_at, finished_at, total_tests, passed, failed)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, [run_id, started_at, finished_at, total, passed, failed])
+    pass  # shared connection — do not close
 
 
 def get_recent_runs(limit: int = 10):
@@ -87,8 +165,25 @@ def get_recent_runs(limit: int = 10):
         ORDER BY timestamp DESC
         LIMIT ?
     """, [limit]).fetchall()
-    conn.close()
+    pass  # shared connection — do not close
     return rows
+
+
+def _ensure_triage_cache(conn):
+    """Ensure triage_cache table exists — safe to call multiple times."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS triage_cache (
+            fingerprint     VARCHAR PRIMARY KEY,
+            category        VARCHAR,
+            confidence_pct  INTEGER,
+            why_it_failed   VARCHAR,
+            suggested_fix   VARCHAR,
+            affected_module VARCHAR,
+            hit_count       INTEGER DEFAULT 0,
+            created_at      TIMESTAMP
+        )
+    """)
+
 
 def cache_lookup(fp: str):
     """
@@ -96,6 +191,7 @@ def cache_lookup(fp: str):
     Returns cached result dict or None if not found.
     """
     conn = get_connection()
+    _ensure_triage_cache(conn)
     row = conn.execute("""
         SELECT category, confidence_pct, why_it_failed,
                suggested_fix, affected_module
@@ -110,7 +206,7 @@ def cache_lookup(fp: str):
             SET hit_count = hit_count + 1
             WHERE fingerprint = ?
         """, [fp])
-        conn.close()
+        pass  # shared connection — do not close
         return {
             "category":        row[0],
             "confidence_pct":  row[1],
@@ -120,7 +216,7 @@ def cache_lookup(fp: str):
             "cache_hit":       True
         }
 
-    conn.close()
+    pass  # shared connection — do not close
     return None
 
 
@@ -130,27 +226,39 @@ def cache_store(fp: str, triage_result: dict):
     Called after every fresh AI API call.
     """
     conn = get_connection()
-    conn.execute("""
-        INSERT OR REPLACE INTO triage_cache
-            (fingerprint, category, confidence_pct,
-             why_it_failed, suggested_fix, affected_module,
-             hit_count, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-    """, [
-        fp,
-        triage_result["category"],
-        triage_result["confidence_pct"],
-        triage_result["why_it_failed"],
-        triage_result["suggested_fix"],
-        triage_result.get("affected_module", "unknown"),
-        datetime.now()
-    ])
-    conn.close()
+    _ensure_triage_cache(conn)
+    try:
+        conn.execute("""
+            INSERT INTO triage_cache
+                (fingerprint, category, confidence_pct,
+                 why_it_failed, suggested_fix, affected_module,
+                 hit_count, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+            ON CONFLICT (fingerprint) DO UPDATE SET
+                category        = EXCLUDED.category,
+                confidence_pct  = EXCLUDED.confidence_pct,
+                why_it_failed   = EXCLUDED.why_it_failed,
+                suggested_fix   = EXCLUDED.suggested_fix,
+                affected_module = EXCLUDED.affected_module,
+                created_at      = EXCLUDED.created_at
+        """, [
+            fp,
+            triage_result["category"],
+            triage_result["confidence_pct"],
+            triage_result["why_it_failed"],
+            triage_result["suggested_fix"],
+            triage_result.get("affected_module", "unknown"),
+            datetime.now()
+        ])
+    except Exception as e:
+        print(f"[TestSentry] ⚠️ cache_store error: {e}")
+    pass  # shared connection — do not close
 
 
 def get_newly_failing_with_triage(run_id: str) -> list:
     """
     Get newly failing tests with triage data for notifications.
+    Joined on matching error stack trace fingerprint.
     """
     from testsentry.ownership_mapper import get_file_owners
 
@@ -158,17 +266,16 @@ def get_newly_failing_with_triage(run_id: str) -> list:
     rows = conn.execute("""
         SELECT t.test_name,
                t.error_msg,
-               MAX(c.category) as category,
-               MAX(c.suggested_fix) as suggested_fix
+               c.category,
+               c.suggested_fix
         FROM test_runs t
         LEFT JOIN triage_cache c
-            ON t.error_msg IS NOT NULL
+            ON t.fingerprint = c.fingerprint
         WHERE t.run_id = ?
         AND t.label = 'NEWLY_FAILING'
-        GROUP BY t.test_name, t.error_msg
         LIMIT 10
     """, [run_id]).fetchall()
-    conn.close()
+    pass  # shared connection — do not close
 
     owners = get_file_owners(".")
     results = []
@@ -196,5 +303,6 @@ def get_fixed_tests(run_id: str) -> list:
         WHERE run_id = ?
         AND label = 'FIXED'
     """, [run_id]).fetchall()
-    conn.close()
-    return [{"test_name": row[0]} for row in rows] 
+    pass  # shared connection — do not close
+    return [{"test_name": row[0]} for row in rows]
+ 

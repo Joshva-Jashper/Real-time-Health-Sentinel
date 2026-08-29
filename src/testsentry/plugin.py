@@ -1,7 +1,8 @@
+from datetime import datetime
 from testsentry.ai_triage import langfuse
 import pytest
 import uuid
-from testsentry.collector import init_db, store_result, get_newly_failing_with_triage, get_fixed_tests
+from testsentry.collector import init_db, store_result, get_newly_failing_with_triage, get_fixed_tests, store_run_metadata
 from testsentry.ai_triage import triage_failure
 from testsentry.health_engine import calculate_health_score
 from testsentry.regression_detector import label_test
@@ -10,6 +11,7 @@ from testsentry.email_notifier import send_email_notification
 
 
 RUN_ID = str(uuid.uuid4())[:8]
+START_TIME = datetime.now()
 
 
 def pytest_configure(config):
@@ -18,12 +20,10 @@ def pytest_configure(config):
     print(f"\n[TestSentry] Run ID: {RUN_ID}")
 
 
-
-
 def pytest_sessionfinish(session, exitstatus):
     """
     Fires after ALL tests finish.
-    Calculate health score and generate HTML report.
+    Calculate health score, record run metadata, and generate HTML report.
     """
     score = calculate_health_score(RUN_ID)
     print(f"\n{'='*50}")
@@ -37,39 +37,48 @@ def pytest_sessionfinish(session, exitstatus):
     print(f"  Flaky tests: {score['flaky_count']}")
     print(f"{'='*50}")
 
+    # Record run session metadata
+    try:
+        passed_cnt = session.testscollected - session.testsfailed if hasattr(session, 'testscollected') else 0
+        failed_cnt = getattr(session, 'testsfailed', 0)
+        store_run_metadata(
+            run_id=RUN_ID,
+            started_at=START_TIME,
+            finished_at=datetime.now(),
+            total=getattr(session, 'testscollected', 0),
+            passed=passed_cnt,
+            failed=failed_cnt
+        )
+    except Exception as e:
+        print(f"[TestSentry] ⚠️ Metadata error: {e}")
+
     generate_report(RUN_ID)
 
-    
     newly_failing = get_newly_failing_with_triage(RUN_ID)
     fixed = get_fixed_tests(RUN_ID)
 
     if newly_failing or fixed:
-        
         owner_failures = {}
         for test in newly_failing:
             owner = test.get("owner", "unowned")
             if owner == "unowned" or "@" not in owner:
-                continue  
+                continue
             if owner not in owner_failures:
                 owner_failures[owner] = []
             owner_failures[owner].append(test)
 
-        
         if owner_failures:
             for owner_email, failures in owner_failures.items():
-                import testsentry.email_notifier as em
-                original_to = em.EMAIL_TO
-                em.EMAIL_TO = owner_email
                 send_email_notification(
                     run_id=RUN_ID,
                     newly_failing=failures,
                     fixed=fixed,
                     health_score=score,
-                    repo_name="Real-time-Health-Sentinel"
+                    repo_name="Real-time-Health-Sentinel",
+                    to_email=owner_email
                 )
-                em.EMAIL_TO = original_to
         else:
-        # Fallback — no git owners found, send to default EMAIL_TO
+            # Fallback — no git owners found, send to default EMAIL_TO
             if newly_failing or fixed:
                 send_email_notification(
                     run_id=RUN_ID,
@@ -81,6 +90,7 @@ def pytest_sessionfinish(session, exitstatus):
 
     langfuse.flush()
     print(f"[TestSentry] 📡 Langfuse traces sent")
+
 
 
 

@@ -125,5 +125,5 @@ def store_coverage_in_db(run_id: str):
             data["pct"]
         ])
 
-    conn.close()
+    pass  # shared connection — do not close
     print(f"[TestSentry] 📊 Coverage stored: {summary['total_pct']}% overall")

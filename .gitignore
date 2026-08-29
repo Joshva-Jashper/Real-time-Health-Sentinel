@@ -1,8 +1,35 @@
+# Environment & secrets
 .env
+*.db
 testsentry.db
+
+# Python bytecode & cache
 __pycache__/
 *.pyc
-*.egg-info/
+*.pyo
+*.pyd
+
+# Virtual environments
 venv/
+.venv/
+env/
+
+# Package builds & metadata
+*.egg-info/
+build/
+dist/
+
+# Testing & coverage outputs
 .pytest_cache/
+.coverage
+htmlcov/
+tests/report.html
+
+# Data
 data/
+
+# IDE & OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

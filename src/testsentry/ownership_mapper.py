@@ -73,7 +73,7 @@ def get_at_risk_modules(repo_path: str = ".") -> list:
         WHERE status = 'FAILED'
         GROUP BY test_name
     """).fetchall()
-    conn.close()
+    pass  # shared connection — do not close
 
    
     file_failures = {}

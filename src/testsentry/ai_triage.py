@@ -19,7 +19,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 langfuse = get_client()
 
 OLLAMA_URL = "http://localhost:11434"
-OLLAMA_MODEL = "testsentry-model"
+OLLAMA_MODEL = "testsentry-model:latest"  # custom fine-tuned llama3.2 model
 
 
 class FailureCategory(str, Enum):
@@ -58,6 +58,23 @@ def is_ollama_running() -> bool:
         return False
 
 
+def get_installed_ollama_model() -> str:
+    """Return an available installed Ollama model if primary target is missing."""
+    try:
+        res = requests.get(f"{OLLAMA_URL}/api/tags", timeout=2)
+        if res.status_code == 200:
+            models = [m.get("name") for m in res.json().get("models", [])]
+            for target in ["testsentry-model", "llama3.2", OLLAMA_MODEL]:
+                for m in models:
+                    if target in m:
+                        return m
+            if models:
+                return models[0]
+    except Exception:
+        pass
+    return OLLAMA_MODEL
+
+
 def triage_with_ollama(result: dict) -> dict:
     """
     Use local fine-tuned model via Ollama.
@@ -77,13 +94,15 @@ def triage_with_ollama(result: dict) -> dict:
         print(f"             Category: {cached['category']}")
         return cached
 
+    active_model = get_installed_ollama_model()
+
     try:
-        print(f"\n[TestSentry] 🤖 LOCAL MODEL — {test_name}")
+        print(f"\n[TestSentry] 🤖 LOCAL MODEL ({active_model}) — {test_name}")
 
         response = requests.post(
             f"{OLLAMA_URL}/api/generate",
             json={
-                "model": OLLAMA_MODEL,
+                "model": active_model,
                 "prompt": f"""Analyze this pytest failure and return ONLY valid JSON.
 
 Test: {test_name}
@@ -100,7 +119,11 @@ Return exactly this JSON structure:
             timeout=60
         )
 
-        content = response.json()["response"]
+        res_json = response.json()
+        if "error" in res_json or "response" not in res_json:
+            raise ValueError(res_json.get("error", "Invalid response format from Ollama"))
+
+        content = res_json["response"]
 
         # Extract JSON from response
         start = content.find("{")
@@ -137,7 +160,7 @@ Return exactly this JSON structure:
 def triage_with_groq(result: dict) -> dict:
     """
     Use Groq API for triage.
-    Fallback when Ollama is not running.
+    Fallback when Ollama is not running or fails.
     """
     error_msg = result.get("error_msg", "")
     test_name = result.get("test_name", "")
@@ -173,87 +196,86 @@ def triage_with_groq(result: dict) -> dict:
 
     print(f"\n[TestSentry] 🤖 GROQ API — {test_name}")
 
-    try:
-        client = get_groq_client()
-        start_time = time.time()
+    # Models confirmed available on this Groq account (checked 2026-08-29)
+    groq_models = [
+        "qwen/qwen3.8-27b",       # best reasoning
+        "openai/gpt-oss-120b",    # largest, strong fallback
+        "openai/gpt-oss-20b",     # fast fallback
+    ]
+    # Use plain Groq client (not instructor) — new models don't support tool-calling schema
+    raw_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+    start_time = time.time()
 
-        triage = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            response_model=TriageResult,
-            messages=[
-                {
-                    "role": "system",
-                    "content": """You are a senior QA engineer analyzing pytest failures.
-                    Categorize each failure into exactly one of:
-                    - REAL_BUG: actual code defect
-                    - FLAKY: non-deterministic, passes sometimes
-                    - ENV_ISSUE: environment/infrastructure problem
-                    - DATA_ISSUE: test data missing or wrong
-                    Always provide a clear explanation and actionable fix."""
-                },
-                {
-                    "role": "user",
-                    "content": f"""Analyze this pytest failure:
+    prompt = f"""Analyze this pytest failure and return ONLY valid JSON, no explanation.
 
-Test name: {test_name}
-Error message: {error_msg}
+Test: {test_name}
+Error: {error_msg}
 
-Return a structured triage with category, confidence as a plain integer
-(not a string, e.g. 92 not "92"), why it failed, and suggested fix."""
-                }
-            ]
-        )
+Return exactly this JSON structure:
+{{"category": "REAL_BUG or FLAKY or ENV_ISSUE or DATA_ISSUE",
+"confidence_pct": 90,
+"why_it_failed": "plain English explanation",
+"suggested_fix": "exact fix to apply",
+"affected_module": "filename.py"}}"""
 
-        latency_ms = round((time.time() - start_time) * 1000, 2)
-
+    for gmodel in groq_models:
         try:
-            category_value = triage.category.value if isinstance(triage.category, Enum) else str(triage.category)
-        except Exception:
-            category_value = str(triage.category)
+            print(f"             Trying Groq model: {gmodel}")
+            completion = raw_client.chat.completions.create(
+                model=gmodel,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a senior QA engineer. Return ONLY valid JSON, no markdown, no explanation."
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=512,
+            )
+            content = completion.choices[0].message.content.strip()
 
-        triage_dict = {
-            "category":        category_value,
-            "confidence_pct":  int(triage.confidence_pct),
-            "why_it_failed":   triage.why_it_failed,
-            "suggested_fix":   triage.suggested_fix,
-            "affected_module": triage.affected_module,
-            "cache_hit":       False
-        }
+            # Strip markdown fences if present
+            if content.startswith("```"):
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
 
-        cache_store(fp, triage_dict)
+            # Extract JSON block
+            start = content.find("{")
+            end = content.rfind("}") + 1
+            if start == -1 or end == 0:
+                raise ValueError("No JSON found in response")
 
-        try:
-            with langfuse.start_as_current_observation(
-                as_type="generation",
-                name="triage-api-call",
-                model="llama-3.3-70b-versatile",
-                input={"test_name": test_name, "error_msg": error_msg[:200]},
-            ) as span:
-                span.update(
-                    output=triage_dict,
-                    metadata={
-                        "cache_hit": False,
-                        "latency_ms": latency_ms,
-                    }
-                )
-            langfuse.flush()
-        except Exception as e:
-            print(f"[TestSentry] ⚠️ Langfuse error: {e}")
+            triage_dict = json.loads(content[start:end])
 
-        print(f"             Category:   {triage_dict['category']}")
-        print(f"             Confidence: {triage_dict['confidence_pct']}%")
-        print(f"             Why:        {triage_dict['why_it_failed']}")
-        print(f"             Fix:        {triage_dict['suggested_fix']}")
+            # Validate and normalise
+            valid_categories = ["REAL_BUG", "FLAKY", "ENV_ISSUE", "DATA_ISSUE"]
+            if triage_dict.get("category") not in valid_categories:
+                triage_dict["category"] = "REAL_BUG"
+            triage_dict["confidence_pct"] = int(triage_dict.get("confidence_pct", 85))
+            triage_dict["cache_hit"] = False
+            triage_dict["groq_model_used"] = gmodel
 
-        return triage_dict
+            print(f"             ✅ Success with model: {gmodel}")
+            print(f"             Category:   {triage_dict['category']}")
+            print(f"             Confidence: {triage_dict['confidence_pct']}%")
+            print(f"             Why:        {triage_dict.get('why_it_failed', '')}")
+            print(f"             Fix:        {triage_dict.get('suggested_fix', '')}")
+           
+            cache_store(fp, triage_dict)
+            return triage_dict
 
-    except Exception as e:
-        print(f"\n[TestSentry] ⚠️ Triage error: {type(e).__name__}: {str(e)}")
-        print(f"             Skipping AI analysis for this failure")
-        return None
+        except Exception as err:
+            print(f"[TestSentry] ⚠️ Groq error ({gmodel}): {err}")
+            continue
+
+    print("[TestSentry] ❌ All Groq models failed.")
+    return None
 
 
 def triage_failure(result: dict) -> dict:
+
     """
     Main entry point. Auto-selects best available backend.
 

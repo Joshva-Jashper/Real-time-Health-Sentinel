@@ -25,12 +25,12 @@ def calculate_flakiness_per_test(test_name: str, window: int = 30) -> dict:
     rows = conn.execute("""
         SELECT status, timestamp
         FROM test_runs
-        WHERE test_name = ?
+        WHERE test_name = CAST(? AS VARCHAR)
         ORDER BY timestamp DESC
         LIMIT ?
-    """, [test_name, window]).fetchall()
+    """, [str(test_name), int(window)]).fetchall()
     
-    conn.close()
+    pass  # shared connection — do not close
     
     if not rows:
         return {
@@ -122,12 +122,12 @@ def detect_time_patterns(test_name: str, window: int = 30) -> dict:
     rows = conn.execute("""
         SELECT status, timestamp
         FROM test_runs
-        WHERE test_name = ?
+        WHERE test_name = CAST(? AS VARCHAR)
         ORDER BY timestamp DESC
         LIMIT ?
-    """, [test_name, window]).fetchall()
+    """, [str(test_name), int(window)]).fetchall()
     
-    conn.close()
+    pass  # shared connection — do not close
     
     if not rows:
         return {'has_pattern': False, 'day_patterns': {}, 'hour_patterns': {}, 'worst_time': None}
@@ -199,12 +199,12 @@ def detect_error_patterns(test_name: str, window: int = 30) -> dict:
     rows = conn.execute("""
         SELECT error_msg, status
         FROM test_runs
-        WHERE test_name = ? AND status = 'FAILED'
+        WHERE test_name = CAST(? AS VARCHAR) AND status = 'FAILED'
         ORDER BY timestamp DESC
         LIMIT ?
-    """, [test_name, window]).fetchall()
+    """, [str(test_name), int(window)]).fetchall()
     
-    conn.close()
+    pass  # shared connection — do not close
     
     error_keywords = {
         'race_condition': ['race', 'concurrent', 'lock', 'deadlock', 'race condition'],
@@ -280,10 +280,11 @@ def get_all_flaky_tests(run_id: str = None) -> list:
             ORDER BY test_name
         """).fetchall()
     
-    conn.close()
+    pass  # shared connection — do not close
     
     flaky_list = []
-    for (test_name,) in tests:
+    for row in tests:
+        test_name = row[0]
         metrics = calculate_flakiness_per_test(test_name)
         if metrics['is_flaky'] or metrics['flakiness_pct'] > 0:
             flaky_list.append(metrics)
