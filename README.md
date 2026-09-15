@@ -218,7 +218,7 @@ testsentry/
 │   └── cli.py                 # Click CLI — 8 commands
 ├── templates/
 │   └── report.html            # Jinja2 report template
-├── tests/                     # 40 tests, 48.6% coverage
+├── tests/                     # 45 tests; coverage depends on the current run
 ├── scripts/
 │   └── generate_dataset.py    # 3000-example dataset generator
 ├── data/
@@ -258,4 +258,4 @@ MIT License — free to use, modify, and distribute.
 
 ---
 
-*TestSentry v2.1 — 7 modules · 40 tests · Fine-tuned AI · GitHub Actions 
+*TestSentry v2.1 — 7 modules · 45 tests · Fine-tuned AI · GitHub Actions 

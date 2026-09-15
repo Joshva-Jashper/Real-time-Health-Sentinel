@@ -228,13 +228,13 @@ def _free_port_if_in_use(port: int):
     current_pid = str(os.getpid())
     # Try fuser -k first
     try:
-        subprocess.run(f"fuser -k {port}/tcp", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["fuser", "-k", f"{int(port)}/tcp"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
 
     # Backup check with lsof
     try:
-        output = subprocess.check_output(f"lsof -t -i:{port}", shell=True, text=True).strip()
+        output = subprocess.check_output(["lsof", "-t", "-i", f":{int(port)}"], text=True).strip()
         if output:
             for pid in output.split():
                 if pid != current_pid:
@@ -249,7 +249,7 @@ def _free_port_if_in_use(port: int):
 
 @cli.command()
 @click.option('--port', default=8088, help='Port to run the dashboard on')
-@click.option('--host', default='0.0.0.0', help='Host to bind to')
+@click.option('--host', default='127.0.0.1', help='Host to bind to')
 def dashboard(port, host):
     """Launch the TestSentry web dashboard (FastAPI + beautiful UI)."""
     import signal

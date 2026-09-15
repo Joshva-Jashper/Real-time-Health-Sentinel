@@ -10,7 +10,7 @@ from groq import Groq
 from langfuse import get_client
 
 from testsentry.fingerprinter import fingerprint
-from testsentry.collector import cache_lookup, cache_store
+from testsentry.collector import cache_lookup, cache_store, store_triage_event
 
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -75,6 +75,25 @@ def get_installed_ollama_model() -> str:
     return OLLAMA_MODEL
 
 
+
+
+def parse_triage_response(content: str) -> dict:
+    """Strictly parse and validate model output."""
+    text = content.strip()
+    if text.startswith("```"):
+        text = text.split("```", 2)[1]
+        text = text[4:] if text.lstrip().startswith("json") else text
+    data = json.loads(text.strip())
+    categories = {"REAL_BUG", "FLAKY", "ENV_ISSUE", "DATA_ISSUE"}
+    if data.get("category") not in categories:
+        raise ValueError("invalid triage category")
+    confidence = max(0, min(100, int(data.get("confidence_pct", 85))))
+    for key in ("why_it_failed", "suggested_fix", "affected_module"):
+        data[key] = str(data.get(key, ""))
+    data["confidence_pct"] = confidence
+    return data
+
+
 def triage_with_ollama(result: dict) -> dict:
     """
     Use local fine-tuned model via Ollama.
@@ -90,6 +109,7 @@ def triage_with_ollama(result: dict) -> dict:
     fp = fingerprint(error_msg)
     cached = cache_lookup(fp)
     if cached:
+        store_triage_event(result.get("run_id"), fp, "ollama", True)
         print(f"\n[TestSentry] 💾 CACHE HIT — {test_name}")
         print(f"             Category: {cached['category']}")
         return cached
@@ -125,24 +145,11 @@ Return exactly this JSON structure:
 
         content = res_json["response"]
 
-        # Extract JSON from response
-        start = content.find("{")
-        end = content.rfind("}") + 1
-        if start == -1 or end == 0:
-            raise ValueError("No JSON found in response")
-
-        triage_dict = json.loads(content[start:end])
+        triage_dict = parse_triage_response(content)
         triage_dict["cache_hit"] = False
 
-        # Validate category
-        valid_categories = ["REAL_BUG", "FLAKY", "ENV_ISSUE", "DATA_ISSUE"]
-        if triage_dict.get("category") not in valid_categories:
-            triage_dict["category"] = "REAL_BUG"
-
-        # Ensure confidence_pct is int
-        triage_dict["confidence_pct"] = int(triage_dict.get("confidence_pct", 85))
-
         cache_store(fp, triage_dict)
+        store_triage_event(result.get("run_id"), fp, "ollama", False)
 
         print(f"             Category:   {triage_dict['category']}")
         print(f"             Confidence: {triage_dict['confidence_pct']}%")
@@ -175,6 +182,7 @@ def triage_with_groq(result: dict) -> dict:
     fp = fingerprint(error_msg)
     cached = cache_lookup(fp)
     if cached:
+        store_triage_event(result.get("run_id"), fp, "groq", True)
         print(f"\n[TestSentry] 💾 CACHE HIT — {test_name}")
         print(f"             Category: {cached['category']}")
 
@@ -241,19 +249,7 @@ Return exactly this JSON structure:
                 if content.startswith("json"):
                     content = content[4:]
 
-            # Extract JSON block
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            if start == -1 or end == 0:
-                raise ValueError("No JSON found in response")
-
-            triage_dict = json.loads(content[start:end])
-
-            # Validate and normalise
-            valid_categories = ["REAL_BUG", "FLAKY", "ENV_ISSUE", "DATA_ISSUE"]
-            if triage_dict.get("category") not in valid_categories:
-                triage_dict["category"] = "REAL_BUG"
-            triage_dict["confidence_pct"] = int(triage_dict.get("confidence_pct", 85))
+            triage_dict = parse_triage_response(content)
             triage_dict["cache_hit"] = False
             triage_dict["groq_model_used"] = gmodel
 
@@ -264,6 +260,7 @@ Return exactly this JSON structure:
             print(f"             Fix:        {triage_dict.get('suggested_fix', '')}")
            
             cache_store(fp, triage_dict)
+            store_triage_event(result.get("run_id"), fp, "groq", False)
             return triage_dict
 
         except Exception as err:

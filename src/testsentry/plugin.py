@@ -2,7 +2,7 @@ from datetime import datetime
 from testsentry.ai_triage import langfuse
 import pytest
 import uuid
-from testsentry.collector import init_db, store_result, get_newly_failing_with_triage, get_fixed_tests, store_run_metadata
+from testsentry.collector import init_db, store_result, get_newly_failing_with_triage, get_fixed_tests, store_run_metadata, get_connection
 from testsentry.ai_triage import triage_failure
 from testsentry.health_engine import calculate_health_score
 from testsentry.regression_detector import label_test
@@ -39,8 +39,12 @@ def pytest_sessionfinish(session, exitstatus):
 
     # Record run session metadata
     try:
-        passed_cnt = session.testscollected - session.testsfailed if hasattr(session, 'testscollected') else 0
-        failed_cnt = getattr(session, 'testsfailed', 0)
+        counts = get_connection().execute("""
+            SELECT COUNT(*) FILTER (WHERE status = 'PASSED' AND phase = 'call'),
+                   COUNT(*) FILTER (WHERE status = 'FAILED' AND phase = 'call')
+            FROM test_runs WHERE run_id = ?
+        """, [RUN_ID]).fetchone()
+        passed_cnt, failed_cnt = (counts or (0, 0))
         store_run_metadata(
             run_id=RUN_ID,
             started_at=START_TIME,
@@ -104,17 +108,20 @@ def pytest_runtest_makereport(item, call):
 
     report = outcome.get_result()
 
-    if report.when == "call":
+    if report.when in ("setup", "call", "teardown"):
         result = {
             "test_name": item.nodeid,
-            "status": "PASSED" if report.passed else "FAILED",
+            "status": "SKIPPED" if report.skipped else ("FAILED" if report.failed else "PASSED"),
             "duration": round(report.duration, 4),
-            "error_msg": str(report.longrepr) if report.failed else None,
+            "error_msg": str(report.longrepr) if (report.failed or report.skipped) else None,
+            "run_id": RUN_ID,
         }
         
-        label = label_test(result, RUN_ID)
-        
-        store_result(result, RUN_ID, label)
+        label = label_test(result, RUN_ID) if report.when == "call" else "PHASE_FAILURE"
+        store_result(result, RUN_ID, label, phase=report.when)
+
+        if report.when != "call":
+            return
 
         label_icon = {
             "NEWLY_FAILING": "🔴",

@@ -9,32 +9,15 @@ from testsentry.collector import get_connection
 
 
 def get_ai_stats(run_id: str) -> dict:
-    """Get AI triage statistics for this run."""
+    """Return AI triage metrics for this run only."""
     conn = get_connection()
-
-    res1 = conn.execute("""
-        SELECT COUNT(*) FROM test_runs
-        WHERE run_id = ? AND status = 'FAILED'
+    failures = conn.execute("SELECT COUNT(*) FROM test_runs WHERE run_id = ? AND status = 'FAILED' AND phase = 'call'", [run_id]).fetchone()[0]
+    hits, calls = conn.execute("""
+        SELECT COALESCE(SUM(CASE WHEN cache_hit THEN 1 ELSE 0 END), 0),
+               COALESCE(SUM(CASE WHEN api_call THEN 1 ELSE 0 END), 0)
+        FROM triage_events WHERE run_id = ?
     """, [run_id]).fetchone()
-    total_failures = res1[0] if (res1 and res1[0] is not None) else 0
-
-    res2 = conn.execute("""
-        SELECT SUM(hit_count) FROM triage_cache
-    """).fetchone()
-    cache_hits = res2[0] if (res2 and res2[0] is not None) else 0
-
-    res3 = conn.execute("""
-        SELECT COUNT(*) FROM triage_cache
-    """).fetchone()
-    api_calls = res3[0] if (res3 and res3[0] is not None) else 0
-
-    pass  # shared connection — do not close
-
-    return {
-        "total_failures": total_failures,
-        "api_calls":      api_calls,
-        "cache_hits":      cache_hits,
-    }
+    return {"total_failures": int(failures or 0), "api_calls": int(calls or 0), "cache_hits": int(hits or 0)}
 
 
 def generate_report(run_id: str, output_path: str = "report.html"):
@@ -68,7 +51,10 @@ def generate_report(run_id: str, output_path: str = "report.html"):
         ai_stats=ai_stats
     )
 
-    with open(output_path, "w") as f:
+    # Always write UTF-8: the report contains Unicode status icons and must
+    # not depend on the host platform's legacy text encoding (for example,
+    # cp1252 on Windows).
+    with open(output_path, "w", encoding="utf-8", newline="") as f:
         f.write(html)
 
     print(f"\n[TestSentry] 📄 Report generated: {output_path}")

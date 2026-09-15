@@ -21,7 +21,10 @@ def run_coverage(test_path: str = "tests/") -> dict:
             "--no-header"
         ], capture_output=True, text=True, timeout=120)
 
-        # Parse coverage.json
+        if result.returncode != 0:
+            print(f"[TestSentry] Coverage command failed (exit {result.returncode})")
+            return {}
+        # Parse coverage.json only after a successful run.
         if os.path.exists("coverage.json"):
             with open("coverage.json") as f:
                 data = json.load(f)

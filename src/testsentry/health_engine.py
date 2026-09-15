@@ -20,7 +20,7 @@ def calculate_health_score(run_id: str) -> dict:
     speed_row = conn.execute("""
         SELECT AVG(duration) as avg_duration
         FROM test_runs
-        WHERE run_id = ?
+        WHERE run_id = ? AND phase = 'call'
     """, [run_id]).fetchone()
 
     try:
@@ -46,7 +46,7 @@ def calculate_health_score(run_id: str) -> dict:
             COUNT(*) as total,
             SUM(CASE WHEN status = 'PASSED' THEN 1 ELSE 0 END) as passed
         FROM test_runs
-        WHERE run_id = ?
+        WHERE run_id = ? AND phase = 'call'
     """, [run_id]).fetchone()
 
     try:
@@ -70,14 +70,20 @@ def calculate_health_score(run_id: str) -> dict:
     # Tests that have flipped status in last 5 runs:
 
     flaky_row = conn.execute("""
-        SELECT COUNT(DISTINCT test_name) as flaky_count
-        FROM (
-            SELECT test_name, COUNT(DISTINCT status) as status_changes
+        WITH bounded AS (
+            SELECT test_name, status, timestamp,
+                   ROW_NUMBER() OVER (PARTITION BY test_name ORDER BY timestamp DESC, rowid DESC) AS rn
             FROM test_runs
-            GROUP BY test_name
-            HAVING status_changes > 1
+            WHERE timestamp <= (SELECT MAX(timestamp) FROM test_runs WHERE run_id = ?)
+              AND phase = 'call'
+        ), recent AS (
+            SELECT test_name, status,
+                   LAG(status) OVER (PARTITION BY test_name ORDER BY timestamp, rn) AS previous_status
+            FROM bounded WHERE rn <= 5
         )
-    """).fetchone()
+        SELECT COUNT(DISTINCT test_name) FROM recent
+        WHERE previous_status IS NOT NULL AND previous_status <> status
+    """, [run_id]).fetchone()
 
     try:
         flaky_count = int(flaky_row[0]) if (flaky_row and flaky_row[0] is not None) else 0
@@ -96,35 +102,11 @@ def calculate_health_score(run_id: str) -> dict:
         flakiness_score = 0
 
   
-    # Code coverage score:
+    # Source coverage is unavailable without coverage.json; do not substitute
+    # a different metric such as test stability under the coverage label.
     from testsentry.coverage_analyzer import get_coverage_summary, get_coverage_score
     cov_summary = get_coverage_summary()
-    if cov_summary.get("total_pct", 0) > 0:
-        coverage_score = get_coverage_score()
-    else:
-        # Fallback if coverage.json is not present
-        coverage_row = conn.execute("""
-            SELECT
-                COUNT(*) as total,
-                SUM(CASE WHEN label = 'STABLE' THEN 1 ELSE 0 END) as stable
-            FROM test_runs
-            WHERE run_id = ?
-        """, [run_id]).fetchone()
-
-        total_c = coverage_row[0] if (coverage_row and coverage_row[0] is not None) else 1
-        stable = coverage_row[1] if (coverage_row and coverage_row[1] is not None) else 0
-        stable_rate = (stable / total_c) * 100 if total_c > 0 else 0
-
-        if stable_rate >= 90:
-            coverage_score = 20
-        elif stable_rate >= 75:
-            coverage_score = 15
-        elif stable_rate >= 60:
-            coverage_score = 10
-        elif stable_rate >= 40:
-            coverage_score = 5
-        else:
-            coverage_score = 0
+    coverage_score = get_coverage_score() if cov_summary.get("total_pct", 0) > 0 else 0
 
     
     # Ratio of new_failing tests — fewer = better quality:
@@ -132,6 +114,7 @@ def calculate_health_score(run_id: str) -> dict:
         SELECT COUNT(*) as newly_failing
         FROM test_runs
         WHERE run_id = ?
+        AND phase = 'call'
         AND label = 'NEWLY_FAILING'
     """, [run_id]).fetchone()
 

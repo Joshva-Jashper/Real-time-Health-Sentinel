@@ -33,3 +33,4 @@ data/
 .vscode/
 .DS_Store
 Thumbs.db
+ollama.log

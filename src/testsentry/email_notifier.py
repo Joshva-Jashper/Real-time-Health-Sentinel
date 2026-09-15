@@ -1,5 +1,6 @@
 import os
 import smtplib
+from html import escape
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
@@ -86,9 +87,9 @@ def build_email(
     pass_rate = health_score.get("pass_rate", 0)
 
     if newly_failing:
-        subject = f"🔴 TestSentry Alert — {len(newly_failing)} test(s) failing in {repo_name}"
+        subject = f"🔴 TestSentry Alert — {len(newly_failing)} test(s) failing in {escape(str(repo_name))}"
     else:
-        subject = f"✅ TestSentry — All issues resolved in {repo_name}"
+        subject = f"✅ TestSentry — All issues resolved in {escape(str(repo_name))}"
 
     # Build HTML body
     failing_rows = ""
@@ -97,7 +98,7 @@ def build_email(
         failing_rows += f"""
         <tr>
             <td style="padding:8px;border-bottom:1px solid #eee;">
-                <code style="color:#e74c3c;">{short}</code>
+                <code style="color:#e74c3c;">{escape(str(short))}</code>
             </td>
             <td style="padding:8px;border-bottom:1px solid #eee;">
                 {test.get("owner", "unowned")}
@@ -119,7 +120,7 @@ def build_email(
         short = test["test_name"].split("::")[-1]
         fixed_list += f"""
         <li style="color:#27ae60;margin:4px 0;">
-            ✅ <code>{short}</code>
+            ✅ <code>{escape(str(short))}</code>
         </li>"""
 
     score_color = "#27ae60" if score >= 80 else "#f39c12" if score >= 60 else "#e74c3c"
@@ -136,7 +137,7 @@ def build_email(
             <div style="background:#1a1d27;padding:24px;color:white;">
                 <h1 style="margin:0;font-size:22px;">🛡️ TestSentry Health Report</h1>
                 <p style="margin:8px 0 0;color:#9ca3af;font-size:14px;">
-                    {repo_name} • Run ID: {run_id} •
+                    {escape(str(repo_name))} • Run ID: {escape(str(run_id))} •
                     {datetime.now().strftime("%Y-%m-%d %H:%M")}
                 </p>
             </div>
@@ -203,7 +204,7 @@ def build_plain_text(
     lines = [
         "TestSentry Health Report",
         "=" * 40,
-        f"Run ID: {run_id}",
+        f"Run ID: {escape(str(run_id))}",
         f"Health Score: {health_score.get('total_score', 0)}/100"
         f" (Grade {health_score.get('grade', '?')})",
         f"Pass Rate: {health_score.get('pass_rate', 0)}%",
@@ -213,15 +214,15 @@ def build_plain_text(
     if newly_failing:
         lines.append(f"NEWLY FAILING ({len(newly_failing)}):")
         for test in newly_failing:
-            lines.append(f"  - {test['test_name']}")
-            lines.append(f"    Owner: {test.get('owner', 'unowned')}")
-            lines.append(f"    Category: {test.get('category', 'UNKNOWN')}")
-            lines.append(f"    Fix: {test.get('suggested_fix', 'Check logs')}")
+            lines.append(f"  - {escape(str(test['test_name']))}")
+            lines.append(f"    Owner: {escape(str(test.get('owner', 'unowned')))}")
+            lines.append(f"    Category: {escape(str(test.get('category', 'UNKNOWN')))}")
+            lines.append(f"    Fix: {escape(str(test.get('suggested_fix', 'Check logs')))}")
             lines.append("")
 
     if fixed:
         lines.append(f"FIXED ({len(fixed)}):")
         for test in fixed:
-            lines.append(f"  + {test['test_name']}")
+            lines.append(f"  + {escape(str(test['test_name']))}")
 
     return "\n".join(lines)

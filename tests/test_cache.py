@@ -31,7 +31,7 @@ def test_cache_store_and_lookup():
 
 def test_cache_hit_count_increments():
     """Hit count should go up every time cache is hit."""
-    from testsentry.collector import get_connection
+    from testsentry.collector import get_connection, cache_key
 
     # Look up twice
     cache_lookup(SAMPLE_FINGERPRINT)
@@ -41,7 +41,7 @@ def test_cache_hit_count_increments():
     row = conn.execute("""
         SELECT hit_count FROM triage_cache
         WHERE fingerprint = ?
-    """, [SAMPLE_FINGERPRINT]).fetchone()
+    """, [cache_key(SAMPLE_FINGERPRINT)]).fetchone()
     # Do NOT close — this is a shared thread-local connection managed by collector
 
     assert row[0] >= 2

@@ -65,6 +65,7 @@
       <span class="run-badge" id="run-badge">Loading…</span>
     </div>
     <div class="topbar-right">
+      <span class="freshness" id="freshness" title="Dashboard data freshness"><span class="freshness-dot"></span><span id="freshness-label">Waiting for data</span></span>
       <label class="toggle-wrap" title="Auto-refresh every 5s">
         <input type="checkbox" id="auto-refresh-toggle" onchange="toggleAutoRefresh(this)" />
         <span class="toggle-track"><span class="toggle-thumb"></span></span>
@@ -82,6 +83,13 @@
 
   <!-- ── OVERVIEW ── -->
   <section class="tab-content active" id="tab-overview">
+    <div class="section-intro">
+      <div>
+        <p class="eyebrow">TEST HEALTH COMMAND CENTER</p>
+        <p class="section-description">A concise view of reliability, regressions, flaky behavior, and ownership for the selected run.</p>
+      </div>
+      <span class="data-scope" id="data-scope">Selected run</span>
+    </div>
     <div class="overview-hero">
       <div class="hero-ring-col">
         <div class="score-ring-wrap">
@@ -246,7 +254,7 @@
     </div>
 
     <div class="card">
-      <div class="card-title-row"><h2 class="card-title">Flaky Test Leaderboard</h2><span class="card-title-icon">🎲</span></div>
+        <div class="card-title-row"><div><h2 class="card-title">Flaky Test Leaderboard</h2><p class="card-sub">Tests with repeated status transitions, ranked by failure rate.</p></div><span class="card-title-icon" aria-hidden="true">🎲</span></div>
       <div class="table-wrap">
         <table class="data-table" id="flaky-table">
           <thead><tr><th>#</th><th>Test Name</th><th>Fail %</th><th>Rating</th><th>Total Runs</th><th>Passed</th><th>Transitions</th><th>Trend</th></tr></thead>
@@ -259,7 +267,7 @@
   <!-- ── RISK ── -->
   <section class="tab-content" id="tab-risk">
     <div class="card">
-      <div class="card-title-row"><h2 class="card-title">At-Risk Modules — Who Needs to Act</h2><span class="card-title-icon">⚠️</span></div>
+      <div class="card-title-row"><div><h2 class="card-title">At-Risk Modules</h2><p class="card-sub">Modules that need attention based on changes, failures, and ownership.</p></div><span class="card-title-icon" aria-hidden="true">⚠️</span></div>
       <div class="table-wrap">
         <table class="data-table" id="risk-table">
           <thead><tr><th>File</th><th>Owner</th><th>Changes</th><th>Failures</th><th>Risk Score</th><th>Risk Level</th></tr></thead>
@@ -272,7 +280,7 @@
   <!-- ── AI TRIAGE ── -->
   <section class="tab-content" id="tab-ai">
     <div class="card">
-      <div class="card-title-row"><h2 class="card-title">AI Triage Cache</h2><span class="card-title-icon">🤖</span></div>
+      <div class="card-title-row"><div><h2 class="card-title">AI Triage Cache</h2><p class="card-sub">Recent explanations and suggested fixes, sorted by cache reuse.</p></div><span class="card-title-icon" aria-hidden="true">🤖</span></div>
       <p class="card-sub">Cached results from testsentry-model (llama3.2) · Sorted by hit count</p>
       <div class="table-wrap">
         <table class="data-table" id="ai-table">
@@ -296,7 +304,7 @@
       </div>
     </div>
     <div class="card" style="margin-top:20px">
-      <div class="card-title-row"><h2 class="card-title">All Runs</h2><span class="card-title-icon">📋</span></div>
+      <div class="card-title-row"><div><h2 class="card-title">All Runs</h2><p class="card-sub">Compare health and pass-rate movement across recent runs.</p></div><span class="card-title-icon" aria-hidden="true">📋</span></div>
       <div class="table-wrap">
         <table class="data-table">
           <thead><tr><th>Run ID</th><th>Started</th><th>Score</th><th>Grade</th><th>Pass Rate</th><th>Flaky</th></tr></thead>
@@ -307,12 +315,12 @@
   </section>
 </main>
 
-<div id="toast" class="toast"></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 <div id="triage-modal" class="modal-overlay" onclick="closeModal(event)">
-  <div class="modal-box">
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="triage-modal-title">
     <div class="modal-header">
-      <h3 class="modal-title">🤖 AI Triage Result</h3>
-      <button class="modal-close" onclick="document.getElementById('triage-modal').classList.remove('open')">✕</button>
+      <h3 class="modal-title" id="triage-modal-title">AI Triage Result</h3>
+      <button class="modal-close" aria-label="Close AI triage result" onclick="document.getElementById('triage-modal').classList.remove('open')">✕</button>
     </div>
     <div class="modal-body" id="modal-body"></div>
   </div>

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 
 
-def calculate_flakiness_per_test(test_name: str, window: int = 30) -> dict:
+def calculate_flakiness_per_test(test_name: str, window: int = 30, run_id: str = None) -> dict:
     """
     Calculate detailed flakiness metrics for a single test.
     
@@ -22,13 +22,21 @@ def calculate_flakiness_per_test(test_name: str, window: int = 30) -> dict:
     """
     conn = get_connection()
     
-    rows = conn.execute("""
-        SELECT status, timestamp
-        FROM test_runs
+    cutoff = None
+    if run_id:
+        cutoff_row = conn.execute("SELECT MAX(timestamp) FROM test_runs WHERE run_id = ?", [run_id]).fetchone()
+        cutoff = cutoff_row[0] if cutoff_row else None
+    query = """
+        SELECT status, timestamp FROM test_runs
         WHERE test_name = CAST(? AS VARCHAR)
-        ORDER BY timestamp DESC
-        LIMIT ?
-    """, [str(test_name), int(window)]).fetchall()
+    """
+    params = [str(test_name)]
+    if cutoff is not None:
+        query += " AND timestamp <= ?"
+        params.append(cutoff)
+    query += " ORDER BY timestamp ASC, rowid ASC LIMIT ?"
+    params.append(int(window))
+    rows = conn.execute(query, params).fetchall()
     
     pass  # shared connection — do not close
     
@@ -50,15 +58,15 @@ def calculate_flakiness_per_test(test_name: str, window: int = 30) -> dict:
     passed = sum(1 for s in statuses if s == 'PASSED')
     failed = sum(1 for s in statuses if s == 'FAILED')
     
-    flakiness_pct = (failed / total_runs * 100) if total_runs > 0 else 0.0
+    failure_rate = (failed / total_runs * 100) if total_runs > 0 else 0.0
     
-    if flakiness_pct == 0:
+    if failure_rate == 0:
         flakiness_rating = 'STABLE'
-    elif flakiness_pct < 10:
+    elif failure_rate < 10:
         flakiness_rating = 'LOW'
-    elif flakiness_pct < 40:
+    elif failure_rate < 40:
         flakiness_rating = 'MEDIUM'
-    elif flakiness_pct < 70:
+    elif failure_rate < 70:
         flakiness_rating = 'HIGH'
     else:
         flakiness_rating = 'CRITICAL'
@@ -69,7 +77,7 @@ def calculate_flakiness_per_test(test_name: str, window: int = 30) -> dict:
         if statuses[i] != statuses[i + 1]:
             status_changes += 1
     
-    if flakiness_pct == 0 or flakiness_pct == 100:
+    if failure_rate == 0 or failure_rate == 100:
         is_flaky = False
     else:
         is_flaky = status_changes > 0
@@ -87,12 +95,15 @@ def calculate_flakiness_per_test(test_name: str, window: int = 30) -> dict:
         elif second_fail_rate < first_fail_rate * 0.8:
             trend = 'IMPROVING'
     
+    status_change_rate = round((status_changes / max(total_runs - 1, 1)) * 100, 2)
     return {
         'test_name': test_name,
         'total_runs': total_runs,
         'passed': passed,
         'failed': failed,
-        'flakiness_pct': round(flakiness_pct, 2),
+        'flakiness_pct': status_change_rate,
+        'failure_rate': round(failure_rate, 2),
+        'status_change_rate': status_change_rate,
         'flakiness_rating': flakiness_rating,
         'status_changes': status_changes,
         'is_flaky': is_flaky,
@@ -119,13 +130,21 @@ def detect_time_patterns(test_name: str, window: int = 30) -> dict:
     """
     conn = get_connection()
     
-    rows = conn.execute("""
-        SELECT status, timestamp
-        FROM test_runs
+    cutoff = None
+    if run_id:
+        cutoff_row = conn.execute("SELECT MAX(timestamp) FROM test_runs WHERE run_id = ?", [run_id]).fetchone()
+        cutoff = cutoff_row[0] if cutoff_row else None
+    query = """
+        SELECT status, timestamp FROM test_runs
         WHERE test_name = CAST(? AS VARCHAR)
-        ORDER BY timestamp DESC
-        LIMIT ?
-    """, [str(test_name), int(window)]).fetchall()
+    """
+    params = [str(test_name)]
+    if cutoff is not None:
+        query += " AND timestamp <= ?"
+        params.append(cutoff)
+    query += " ORDER BY timestamp ASC, rowid ASC LIMIT ?"
+    params.append(int(window))
+    rows = conn.execute(query, params).fetchall()
     
     pass  # shared connection — do not close
     
@@ -200,7 +219,7 @@ def detect_error_patterns(test_name: str, window: int = 30) -> dict:
         SELECT error_msg, status
         FROM test_runs
         WHERE test_name = CAST(? AS VARCHAR) AND status = 'FAILED'
-        ORDER BY timestamp DESC
+        ORDER BY timestamp ASC
         LIMIT ?
     """, [str(test_name), int(window)]).fetchall()
     
@@ -285,8 +304,8 @@ def get_all_flaky_tests(run_id: str = None) -> list:
     flaky_list = []
     for row in tests:
         test_name = row[0]
-        metrics = calculate_flakiness_per_test(test_name)
-        if metrics['is_flaky'] or metrics['flakiness_pct'] > 0:
+        metrics = calculate_flakiness_per_test(test_name, run_id=run_id)
+        if metrics['is_flaky']:
             flaky_list.append(metrics)
     
     

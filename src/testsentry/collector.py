@@ -6,6 +6,10 @@ from testsentry.fingerprinter import fingerprint
 
 
 DB_PATH = os.path.join(os.getcwd(), "testsentry.db")
+# Namespace cache entries by project; an explicit value supports shared deployments.
+CACHE_NAMESPACE = os.getenv("TESTSENTRY_CACHE_NAMESPACE", os.path.abspath(os.getcwd()))
+def cache_key(fp: str) -> str:
+    return fingerprint(f"{CACHE_NAMESPACE}:{fp}")
 
 # One write connection for the collector/plugin (protected by a lock)
 _write_lock = threading.Lock()
@@ -66,9 +70,18 @@ def init_db():
             error_msg   VARCHAR,
             fingerprint VARCHAR,
             label       VARCHAR DEFAULT 'STABLE',
+            phase       VARCHAR DEFAULT 'call',
             timestamp   TIMESTAMP
         )
     """)
+    try:
+        conn.execute("ALTER TABLE test_runs ADD COLUMN phase VARCHAR DEFAULT 'call'")
+    except Exception:
+        pass
+    conn.execute("""CREATE TABLE IF NOT EXISTS triage_events (
+        run_id VARCHAR, fingerprint VARCHAR, backend VARCHAR, cache_hit BOOLEAN,
+        api_call BOOLEAN, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
     # Add fingerprint column if DB existed prior to this update
     try:
         conn.execute("ALTER TABLE test_runs ADD COLUMN fingerprint VARCHAR")
@@ -117,28 +130,24 @@ def init_db():
     print("[TestSentry] Database initialized at testsentry.db")
 
 
-def store_result(result: dict, run_id: str, label: str = "NEW_TEST"):
-    """
-    Save a single test result to DuckDB.
-    Called after every test finishes.
-    """
+def store_result(result: dict, run_id: str, label: str = "NEW_TEST", phase: str = "call"):
+    """Save one result with an explicit pytest phase under the write lock."""
+    with _write_lock:
+        conn = get_connection()
+        fp = fingerprint(result["error_msg"]) if result.get("error_msg") else None
+        conn.execute("""
+            INSERT INTO test_runs
+                (run_id, test_name, status, duration, error_msg, fingerprint, label, phase, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, [run_id, result["test_name"], result["status"], result.get("duration", 0),
+              result.get("error_msg"), fp, label, phase, datetime.now()])
+
+
+def store_triage_event(run_id: str | None, fp: str, backend: str, cache_hit: bool):
     conn = get_connection()
-    fp = fingerprint(result["error_msg"]) if result.get("error_msg") else None
-    conn.execute("""
-        INSERT INTO test_runs
-            (run_id, test_name, status, duration, error_msg, fingerprint, label, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, [
-        run_id,
-        result["test_name"],
-        result["status"],
-        result["duration"],
-        result["error_msg"],
-        fp,
-        label,
-        datetime.now()
-    ])
-    pass  # shared connection — do not close
+    conn.execute("""INSERT INTO triage_events
+        (run_id, fingerprint, backend, cache_hit, api_call) VALUES (?, ?, ?, ?, ?)
+    """, [run_id, fp, backend, cache_hit, not cache_hit])
 
 
 def store_run_metadata(run_id: str, started_at: datetime, finished_at: datetime, total: int, passed: int, failed: int):
@@ -197,7 +206,7 @@ def cache_lookup(fp: str):
                suggested_fix, affected_module
         FROM triage_cache
         WHERE fingerprint = ?
-    """, [fp]).fetchone()
+    """, [cache_key(fp)]).fetchone()
 
     if row:
         # Increment hit counter
@@ -205,7 +214,7 @@ def cache_lookup(fp: str):
             UPDATE triage_cache
             SET hit_count = hit_count + 1
             WHERE fingerprint = ?
-        """, [fp])
+        """, [cache_key(fp)])
         pass  # shared connection — do not close
         return {
             "category":        row[0],
@@ -221,88 +230,51 @@ def cache_lookup(fp: str):
 
 
 def cache_store(fp: str, triage_result: dict):
-    """
-    Store a new triage result in the cache.
-    Called after every fresh AI API call.
-    """
-    conn = get_connection()
-    _ensure_triage_cache(conn)
-    try:
-        conn.execute("""
-            INSERT INTO triage_cache
-                (fingerprint, category, confidence_pct,
-                 why_it_failed, suggested_fix, affected_module,
-                 hit_count, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-            ON CONFLICT (fingerprint) DO UPDATE SET
-                category        = EXCLUDED.category,
-                confidence_pct  = EXCLUDED.confidence_pct,
-                why_it_failed   = EXCLUDED.why_it_failed,
-                suggested_fix   = EXCLUDED.suggested_fix,
-                affected_module = EXCLUDED.affected_module,
-                created_at      = EXCLUDED.created_at
-        """, [
-            fp,
-            triage_result["category"],
-            triage_result["confidence_pct"],
-            triage_result["why_it_failed"],
-            triage_result["suggested_fix"],
-            triage_result.get("affected_module", "unknown"),
-            datetime.now()
-        ])
-    except Exception as e:
-        print(f"[TestSentry] ⚠️ cache_store error: {e}")
-    pass  # shared connection — do not close
+    """Store a fresh triage result under the serialized write lock."""
+    with _write_lock:
+        conn = get_connection()
+        _ensure_triage_cache(conn)
+        try:
+            conn.execute("""
+                INSERT INTO triage_cache
+                    (fingerprint, category, confidence_pct, why_it_failed,
+                     suggested_fix, affected_module, hit_count, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (fingerprint) DO UPDATE SET
+                    category = EXCLUDED.category, confidence_pct = EXCLUDED.confidence_pct,
+                    why_it_failed = EXCLUDED.why_it_failed, suggested_fix = EXCLUDED.suggested_fix,
+                    affected_module = EXCLUDED.affected_module, created_at = EXCLUDED.created_at
+            """, [cache_key(fp), triage_result["category"], triage_result["confidence_pct"],
+                  triage_result.get("why_it_failed", ""), triage_result.get("suggested_fix", ""),
+                  triage_result.get("affected_module", "unknown"), 0, datetime.now()])
+        except Exception as e:
+            print(f"[TestSentry] cache_store error: {e}")
+
+
+def store_triage_event(run_id: str | None, fp: str, backend: str, cache_hit: bool):
+    with _write_lock:
+        conn = get_connection()
+        conn.execute("""INSERT INTO triage_events
+            (run_id, fingerprint, backend, cache_hit, api_call) VALUES (?, ?, ?, ?, ?)
+        """, [run_id, cache_key(fp), backend, cache_hit, not cache_hit])
 
 
 def get_newly_failing_with_triage(run_id: str) -> list:
-    """
-    Get newly failing tests with triage data for notifications.
-    Joined on matching error stack trace fingerprint.
-    """
     from testsentry.ownership_mapper import get_file_owners
-
     conn = get_connection()
     rows = conn.execute("""
-        SELECT t.test_name,
-               t.error_msg,
-               c.category,
-               c.suggested_fix
-        FROM test_runs t
-        LEFT JOIN triage_cache c
-            ON t.fingerprint = c.fingerprint
-        WHERE t.run_id = ?
-        AND t.label = 'NEWLY_FAILING'
-        LIMIT 10
+        SELECT t.test_name, t.error_msg, c.category, c.suggested_fix
+        FROM test_runs t LEFT JOIN triage_cache c ON t.fingerprint = c.fingerprint
+        WHERE t.run_id = ? AND t.label = 'NEWLY_FAILING' AND t.phase = 'call' LIMIT 10
     """, [run_id]).fetchall()
-    pass  # shared connection — do not close
-
     owners = get_file_owners(".")
-    results = []
-
-    for row in rows:
-        test_name, error_msg, category, suggested_fix = row
-        file_path = test_name.split("::")[0] if "::" in test_name else test_name
-        owner = owners.get(file_path, "unowned")
-        results.append({
-            "test_name":     test_name,
-            "owner":         owner,
-            "category":      category or "UNKNOWN",
-            "suggested_fix": suggested_fix or "Check the error logs"
-        })
-
-    return results
+    return [{"test_name": name, "owner": owners.get(name.split("::")[0], "unowned"),
+             "category": category or "UNKNOWN", "suggested_fix": fix or "Check the error logs"}
+            for name, error, category, fix in rows]
 
 
 def get_fixed_tests(run_id: str) -> list:
-    """Get tests that were fixed in this run."""
     conn = get_connection()
-    rows = conn.execute("""
-        SELECT test_name
-        FROM test_runs
-        WHERE run_id = ?
-        AND label = 'FIXED'
-    """, [run_id]).fetchall()
-    pass  # shared connection — do not close
+    rows = conn.execute("""SELECT test_name FROM test_runs
+        WHERE run_id = ? AND label = 'FIXED' AND phase = 'call'""", [run_id]).fetchall()
     return [{"test_name": row[0]} for row in rows]
- 

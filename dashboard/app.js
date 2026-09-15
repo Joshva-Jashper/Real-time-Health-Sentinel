@@ -12,11 +12,16 @@ let passRateChart  = null;
 let scoreRingChart = null;
 
 window.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("tests-tbody").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-triage]");
+    if (button) triggerTriage(button.dataset.testName, button.dataset.errorMsg);
+  });
   loadAll();
 });
 
 async function loadAll() {
   spinRefresh(true);
+  setFreshness("Refreshing…", "loading");
   try {
     await loadRuns();
     if (currentRunId) {
@@ -28,9 +33,12 @@ async function loadAll() {
         loadAiCache(),
         loadHistory(),
       ]);
+      setFreshness(`Updated ${new Date().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}`, "live");
     }
   } catch (e) {
-    showToast("⚠️ API unreachable — is the server running? (port 8088)", true);
+    setConnectionStatus(false);
+    setFreshness("Offline", "offline");
+    showToast("API unreachable — is the server running on port 8088?", true);
   }
   spinRefresh(false);
 }
@@ -66,6 +74,7 @@ async function loadRuns() {
   });
   currentRunId = sel.value;
   document.getElementById("run-badge").textContent = `Run ID: ${currentRunId.substring(0,8)}`;
+  document.getElementById("data-scope").textContent = `Run ${currentRunId.substring(0,8)}`;
 }
 
 function onRunChange() {
@@ -208,13 +217,13 @@ function renderTestsTable(rows) {
   tbody.innerHTML = rows.map((r) => `
     <tr>
       <td><span class="mono truncate" title="${esc(r.test_name)}">${esc(r.test_name)}</span></td>
-      <td><span class="badge badge-${r.status.toLowerCase()}">${r.status === "PASSED" ? "✅" : "❌"} ${r.status}</span></td>
-      <td><span class="badge badge-${labelClass(r.label)}">${labelIcon(r.label)} ${r.label}</span></td>
-      <td><span class="mono">${r.duration?.toFixed(4)}s</span></td>
+      <td><span class="badge badge-${String(r.status || "").toLowerCase()}">${r.status === "PASSED" ? "PASS" : "FAIL"} ${esc(r.status || "UNKNOWN")}</span></td>
+      <td><span class="badge badge-${labelClass(r.label)}">${labelIcon(r.label)} ${esc(r.label || "UNLABELED")}</span></td>
+      <td><span class="mono">${Number.isFinite(r.duration) ? Number(r.duration).toFixed(4) : "—"}s</span></td>
       <td><span class="truncate-lg" style="font-size:12px;color:var(--text3)" title="${esc(r.error_msg || '')}">${esc(r.error_msg || '—')}</span></td>
       <td>
         ${r.status === "FAILED" && r.error_msg ? `
-          <button class="btn-primary" onclick="triggerTriage('${esc(r.test_name)}', '${esc(r.error_msg.replace(/'/g, "\\'"))}')">
+          <button class="btn-primary" type="button" data-triage data-test-name="${esc(r.test_name)}" data-error-msg="${esc(r.error_msg)}" aria-label="Run AI triage for ${esc(r.test_name)}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
             Triage
           </button>
@@ -308,7 +317,7 @@ async function loadFlaky() {
     <tr>
       <td><span class="mono">${i + 1}</span></td>
       <td><span class="mono truncate" title="${esc(t.test_name)}">${esc(t.test_name)}</span></td>
-      <td><strong style="color:${flakyColor(t.flakiness_pct)}">${t.flakiness_pct}%</strong></td>
+      <td><strong style="color:${flakyColor(t.failure_rate ?? t.flakiness_pct)}">${t.failure_rate ?? t.flakiness_pct}%</strong></td>
       <td><span class="badge badge-${t.flakiness_rating.toLowerCase()}">${t.flakiness_rating}</span></td>
       <td><span class="mono">${t.total_runs}</span></td>
       <td><span class="mono" style="color:var(--green)">${t.passed}</span></td>
@@ -432,6 +441,7 @@ async function apiFetch(path) {
   try {
     const res = await fetch(`${API}${path}`);
     if (!res.ok) throw new Error(res.statusText);
+    setConnectionStatus(true);
     return await res.json();
   } catch (e) {
     console.warn("API error", path, e);
@@ -447,9 +457,24 @@ function spinRefresh(on) {
 
 function showToast(msg, isError = false) {
   const t = document.getElementById("toast");
-  t.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>${msg}`;
+  t.replaceChildren(document.createTextNode(String(msg)));
   t.className = `toast${isError ? " error" : ""} show`;
   setTimeout(() => t.classList.remove("show"), 4000);
+}
+
+function setConnectionStatus(connected) {
+  const status = document.getElementById("sidebar-status");
+  if (!status) return;
+  status.textContent = connected ? "Live" : "Offline";
+  status.classList.toggle("offline", !connected);
+}
+
+function setFreshness(label, state) {
+  const indicator = document.getElementById("freshness");
+  const text = document.getElementById("freshness-label");
+  if (!indicator || !text) return;
+  text.textContent = label;
+  indicator.className = `freshness ${state}`;
 }
 
 function animateNumber(obj, end, duration) {
