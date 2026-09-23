@@ -144,15 +144,16 @@ def test_cli_commands_cover_empty_and_version(monkeypatch, tmp_path):
 
 def test_api_all_read_endpoints_and_triage_fallback(monkeypatch):
     client = TestClient(api.app)
+    headers = {"x-api-key": os.getenv("TESTSENTRY_API_KEY", "ci-test-key")}
     for path in ("/api/runs", "/api/health/latest", "/api/flaky", "/api/risk", "/api/history", "/api/triage-cache"):
-        response = client.get(path)
+        response = client.get(path, headers=headers)
         assert response.status_code in (200, 404)
     monkeypatch.setattr(api, "get_ai_stats", lambda run_id: {"total_failures": 0})
-    assert client.get("/api/ai-stats/run").json() == {"total_failures": 0}
+    assert client.get("/api/ai-stats/run", headers=headers).json() == {"total_failures": 0}
     monkeypatch.setattr("testsentry.ai_triage.triage_failure", lambda result: None)
-    assert client.post("/api/triage-test", json={"test_name": "test", "error_msg": "failure"}).status_code == 503
+    assert client.post("/api/triage-test", headers=headers, json={"test_name": "test", "error_msg": "failure"}).status_code == 503
     monkeypatch.setattr("testsentry.ai_triage.triage_failure", lambda result: {"category": "LOCATOR_FAILURE"})
-    assert client.post("/api/triage-test", json={"test_name": "test", "error_msg": "failure"}).status_code == 200
+    assert client.post("/api/triage-test", headers=headers, json={"test_name": "test", "error_msg": "failure"}).status_code == 200
 
 
 def test_plugin_session_finish_and_report_hook(monkeypatch):
