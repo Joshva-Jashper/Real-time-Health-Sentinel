@@ -1,298 +1,249 @@
-import os
-import time
-import json
-import requests
-from enum import Enum
-from dotenv import load_dotenv
-from pydantic import BaseModel, field_validator
-import instructor
-from groq import Groq
-from langfuse import get_client
+"""Tiered GPT analysis for test failures.
 
-from testsentry.fingerprinter import fingerprint
+The analyzer uses GPT-5 mini for the normal path and escalates ambiguous or
+potentially real application bugs to GPT-5. Browser/API evidence is included
+when available, after the same redaction used by the evidence collector.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from enum import Enum
+from pathlib import Path
+from typing import Any, Mapping
+
+from dotenv import load_dotenv
+from langfuse import get_client
+from pydantic import BaseModel, Field, field_validator
+
 from testsentry.collector import cache_lookup, cache_store, store_triage_event
+from testsentry.evidence import redact_text
+from testsentry.fingerprinter import fingerprint
 
 load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-
-# Initialize Langfuse v4 client
 langfuse = get_client()
 
-OLLAMA_URL = "http://localhost:11434"
-OLLAMA_MODEL = "testsentry-model:latest"  # custom fine-tuned llama3.2 model
+GPT_MINI_MODEL = "gpt-5-mini"
+GPT_ESCALATION_MODEL = "gpt-5"
+_MAX_EVIDENCE_CHARS = 12_000
+_ESCALATION_CONFIDENCE = 80
 
 
 class FailureCategory(str, Enum):
-    REAL_BUG   = "REAL_BUG"
-    FLAKY      = "FLAKY"
-    ENV_ISSUE  = "ENV_ISSUE"
+    REAL_BUG = "REAL_BUG"
+    FLAKY = "FLAKY"
+    ENV_ISSUE = "ENV_ISSUE"
     DATA_ISSUE = "DATA_ISSUE"
 
 
 class TriageResult(BaseModel):
-    category:        FailureCategory
-    confidence_pct:  int
-    why_it_failed:   str
-    suggested_fix:   str
+    category: FailureCategory
+    confidence_pct: int = Field(ge=0, le=100)
+    why_it_failed: str
+    suggested_fix: str
     affected_module: str
 
     @field_validator("confidence_pct", mode="before")
     @classmethod
-    def parse_confidence(cls, v):
-        """Accept both int and string for confidence_pct."""
-        return int(v)
+    def parse_confidence(cls, value: Any) -> int:
+        return max(0, min(100, int(value)))
 
 
-def get_groq_client():
-    """Create Instructor-wrapped Groq client."""
-    groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-    return instructor.from_groq(groq_client)
+_TRIAGE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "category": {
+            "type": "string",
+            "enum": [item.value for item in FailureCategory],
+        },
+        "confidence_pct": {"type": "integer", "minimum": 0, "maximum": 100},
+        "why_it_failed": {"type": "string"},
+        "suggested_fix": {"type": "string"},
+        "affected_module": {"type": "string"},
+    },
+    "required": [
+        "category",
+        "confidence_pct",
+        "why_it_failed",
+        "suggested_fix",
+        "affected_module",
+    ],
+    "additionalProperties": False,
+}
+
+_SYSTEM_PROMPT = """You are TestSentry's senior QA failure analyst.
+Classify the failure using exactly one category:
+- REAL_BUG: application or service behavior is incorrect; never recommend changing production logic just to make a test pass.
+- FLAKY: nondeterministic timing, ordering, race, or intermittent test behavior.
+- ENV_ISSUE: browser, driver, network, CI, dependency, or infrastructure problem.
+- DATA_ISSUE: invalid, missing, stale, or conflicting test data/configuration.
+
+Use DOM and API evidence when present. A missing locator is not automatically a
+real bug: distinguish a changed UI contract from a genuinely broken behavior.
+Suggest changes to test code, selectors, waits, fixtures, or environment only
+when justified. Never propose an automatic correction for REAL_BUG.
+Return only the requested JSON object."""
 
 
-def is_ollama_running() -> bool:
-    """Check if Ollama is running locally."""
-    try:
-        response = requests.get(OLLAMA_URL, timeout=2)
-        return response.status_code == 200
-    except Exception:
-        return False
+def parse_triage_response(content: str | Mapping[str, Any]) -> dict[str, Any]:
+    """Parse, validate, and bound a model response."""
+    if isinstance(content, Mapping):
+        data = dict(content)
+    else:
+        text = str(content).strip()
+        if text.startswith("```"):
+            parts = text.split("```", 2)
+            text = parts[1] if len(parts) > 1 else text
+            if text.lstrip().startswith("json"):
+                text = text.lstrip()[4:]
+        data = json.loads(text.strip())
 
-
-def get_installed_ollama_model() -> str:
-    """Return an available installed Ollama model if primary target is missing."""
-    try:
-        res = requests.get(f"{OLLAMA_URL}/api/tags", timeout=2)
-        if res.status_code == 200:
-            models = [m.get("name") for m in res.json().get("models", [])]
-            for target in ["testsentry-model", "llama3.2", OLLAMA_MODEL]:
-                for m in models:
-                    if target in m:
-                        return m
-            if models:
-                return models[0]
-    except Exception:
-        pass
-    return OLLAMA_MODEL
-
-
-
-
-def parse_triage_response(content: str) -> dict:
-    """Strictly parse and validate model output."""
-    text = content.strip()
-    if text.startswith("```"):
-        text = text.split("```", 2)[1]
-        text = text[4:] if text.lstrip().startswith("json") else text
-    data = json.loads(text.strip())
-    categories = {"REAL_BUG", "FLAKY", "ENV_ISSUE", "DATA_ISSUE"}
+    categories = {item.value for item in FailureCategory}
     if data.get("category") not in categories:
         raise ValueError("invalid triage category")
-    confidence = max(0, min(100, int(data.get("confidence_pct", 85))))
+    data["confidence_pct"] = max(0, min(100, int(data.get("confidence_pct", 0))))
     for key in ("why_it_failed", "suggested_fix", "affected_module"):
         data[key] = str(data.get(key, ""))
-    data["confidence_pct"] = confidence
-    return data
+    return TriageResult.model_validate(data).model_dump(mode="json")
 
 
-def triage_with_ollama(result: dict) -> dict:
-    """
-    Use local fine-tuned model via Ollama.
-    Zero API cost — runs completely offline.
-    """
-    error_msg = result.get("error_msg", "")
-    test_name = result.get("test_name", "")
-
-    if not error_msg:
-        return None
-
-    # Check cache first
-    fp = fingerprint(error_msg)
-    cached = cache_lookup(fp)
-    if cached:
-        store_triage_event(result.get("run_id"), fp, "ollama", True)
-        print(f"\n[TestSentry] 💾 CACHE HIT — {test_name}")
-        print(f"             Category: {cached['category']}")
-        return cached
-
-    active_model = get_installed_ollama_model()
-
-    try:
-        print(f"\n[TestSentry] 🤖 LOCAL MODEL ({active_model}) — {test_name}")
-
-        response = requests.post(
-            f"{OLLAMA_URL}/api/generate",
-            json={
-                "model": active_model,
-                "prompt": f"""Analyze this pytest failure and return ONLY valid JSON.
-
-Test: {test_name}
-Error: {error_msg}
-
-Return exactly this JSON structure:
-{{"category": "REAL_BUG or FLAKY or ENV_ISSUE or DATA_ISSUE",
-"confidence_pct": 90,
-"why_it_failed": "plain English explanation",
-"suggested_fix": "exact fix to apply",
-"affected_module": "filename.py"}}""",
-                "stream": False
-            },
-            timeout=60
-        )
-
-        res_json = response.json()
-        if "error" in res_json or "response" not in res_json:
-            raise ValueError(res_json.get("error", "Invalid response format from Ollama"))
-
-        content = res_json["response"]
-
-        triage_dict = parse_triage_response(content)
-        triage_dict["cache_hit"] = False
-
-        cache_store(fp, triage_dict)
-        store_triage_event(result.get("run_id"), fp, "ollama", False)
-
-        print(f"             Category:   {triage_dict['category']}")
-        print(f"             Confidence: {triage_dict['confidence_pct']}%")
-        print(f"             Why:        {triage_dict['why_it_failed']}")
-        print(f"             Fix:        {triage_dict['suggested_fix']}")
-
-        return triage_dict
-
-    except Exception as e:
-        print(f"\n[TestSentry] ⚠️ Local model error: {e}")
-        print(f"             Falling back to Groq API")
-        return triage_with_groq(result)
-
-
-def triage_with_groq(result: dict) -> dict:
-    """
-    Use Groq API for triage.
-    Fallback when Ollama is not running or fails.
-    """
-    error_msg = result.get("error_msg", "")
-    test_name = result.get("test_name", "")
-
-    if not os.getenv("GROQ_API_KEY"):
-        print("\n[TestSentry] ⚠️ GROQ_API_KEY not set. Skipping AI triage.")
-        return None
-
-    if not error_msg:
-        return None
-
-    fp = fingerprint(error_msg)
-    cached = cache_lookup(fp)
-    if cached:
-        store_triage_event(result.get("run_id"), fp, "groq", True)
-        print(f"\n[TestSentry] 💾 CACHE HIT — {test_name}")
-        print(f"             Category: {cached['category']}")
-
-        try:
-            with langfuse.start_as_current_observation(
-                as_type="span",
-                name="triage-cache-hit",
-                input={"test_name": test_name, "fingerprint": fp},
-            ) as span:
-                span.update(
-                    output={"category": cached["category"]},
-                    metadata={"cache_hit": True, "api_cost": 0.0}
-                )
-            langfuse.flush()
-        except Exception as e:
-            print(f"[TestSentry] ⚠️ Langfuse error: {e}")
-
-        return cached
-
-    print(f"\n[TestSentry] 🤖 GROQ API — {test_name}")
-
-    # Models confirmed available on this Groq account (checked 2026-08-29)
-    groq_models = [
-        "qwen/qwen3.8-27b",       # best reasoning
-        "openai/gpt-oss-120b",    # largest, strong fallback
-        "openai/gpt-oss-20b",     # fast fallback
+def build_analysis_context(result: Mapping[str, Any]) -> str:
+    """Build a bounded, sanitized prompt context from a test result/evidence."""
+    sections = [
+        f"Test: {result.get('test_name', '')}",
+        f"Error: {redact_text(str(result.get('error_msg', '')))}",
     ]
-    # Use plain Groq client (not instructor) — new models don't support tool-calling schema
-    raw_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-    start_time = time.time()
+    for key in ("framework", "locator", "run_id", "affected_module"):
+        if result.get(key) is not None:
+            sections.append(f"{key}: {redact_text(str(result[key]))}")
 
-    prompt = f"""Analyze this pytest failure and return ONLY valid JSON, no explanation.
+    evidence = result.get("evidence")
+    evidence_dir = result.get("evidence_dir")
+    if evidence is None and evidence_dir:
+        evidence = evidence_dir
+    if isinstance(evidence, Mapping):
+        sections.append("Evidence metadata:\n" + redact_text(json.dumps(evidence, default=str)))
+    elif evidence:
+        directory = Path(str(evidence))
+        if directory.is_dir():
+            for path in sorted(directory.iterdir()):
+                if path.suffix.lower() not in {".txt", ".json", ".html"} or not path.is_file():
+                    continue
+                try:
+                    content = redact_text(path.read_text(encoding="utf-8", errors="replace"))
+                except OSError:
+                    continue
+                sections.append(f"Evidence file {path.name}:\n{content[:4000]}")
 
-Test: {test_name}
-Error: {error_msg}
-
-Return exactly this JSON structure:
-{{"category": "REAL_BUG or FLAKY or ENV_ISSUE or DATA_ISSUE",
-"confidence_pct": 90,
-"why_it_failed": "plain English explanation",
-"suggested_fix": "exact fix to apply",
-"affected_module": "filename.py"}}"""
-
-    for gmodel in groq_models:
-        try:
-            print(f"             Trying Groq model: {gmodel}")
-            completion = raw_client.chat.completions.create(
-                model=gmodel,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a senior QA engineer. Return ONLY valid JSON, no markdown, no explanation."
-                    },
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,
-                max_tokens=512,
-            )
-            content = completion.choices[0].message.content.strip()
-
-            # Strip markdown fences if present
-            if content.startswith("```"):
-                content = content.split("```")[1]
-                if content.startswith("json"):
-                    content = content[4:]
-
-            triage_dict = parse_triage_response(content)
-            triage_dict["cache_hit"] = False
-            triage_dict["groq_model_used"] = gmodel
-
-            print(f"             ✅ Success with model: {gmodel}")
-            print(f"             Category:   {triage_dict['category']}")
-            print(f"             Confidence: {triage_dict['confidence_pct']}%")
-            print(f"             Why:        {triage_dict.get('why_it_failed', '')}")
-            print(f"             Fix:        {triage_dict.get('suggested_fix', '')}")
-           
-            cache_store(fp, triage_dict)
-            store_triage_event(result.get("run_id"), fp, "groq", False)
-            return triage_dict
-
-        except Exception as err:
-            print(f"[TestSentry] ⚠️ Groq error ({gmodel}): {err}")
-            continue
-
-    print("[TestSentry] ❌ All Groq models failed.")
-    return None
+    return "\n\n".join(sections)[:_MAX_EVIDENCE_CHARS]
 
 
-def triage_failure(result: dict) -> dict:
+def _client():
+    """Create the OpenAI-compatible client lazily so offline test runs work."""
+    if not os.getenv("OPENAI_API_KEY"):
+        return None
+    from openai import OpenAI
 
-    """
-    Main entry point. Auto-selects best available backend.
+    return OpenAI()
 
-    Priority:
-    1. Local Ollama model (testsentry-model) — zero cost, offline
-    2. Groq API — free tier, requires API key
-    3. Skip — no backend available
-    """
-    # Try local model first
-    if is_ollama_running():
-        print(f"[TestSentry] 🏠 Using local fine-tuned model")
-        return triage_with_ollama(result)
 
-    # Fall back to Groq
-    if os.getenv("GROQ_API_KEY"):
-        print(f"[TestSentry] ☁️  Ollama not running — using Groq API")
-        return triage_with_groq(result)
+def _call_model(client: Any, model: str, context: str, review: dict[str, Any] | None = None) -> dict[str, Any]:
+    user_prompt = context
+    if review:
+        user_prompt += "\n\nPreliminary GPT-5 mini result to review:\n" + json.dumps(review)
+        user_prompt += "\nRe-evaluate it carefully; preserve it only if the evidence supports it."
 
-    # No backend available
-    print("\n[TestSentry] ⚠️ No AI backend available.")
-    print("             Start Ollama: ollama serve")
-    print("             Or set GROQ_API_KEY in .env")
-    return None
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_completion_tokens=700,
+        extra_body={"reasoning": {"effort": "minimal" if model == GPT_MINI_MODEL else "medium"}},
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "testsentry_triage",
+                "strict": True,
+                "schema": _TRIAGE_SCHEMA,
+            },
+        },
+    )
+    content = response.choices[0].message.content
+    if not content:
+        raise ValueError(f"{model} returned an empty response")
+    return parse_triage_response(content)
+
+
+def _should_escalate(triage: Mapping[str, Any]) -> bool:
+    return (
+        int(triage.get("confidence_pct", 0)) < _ESCALATION_CONFIDENCE
+        or triage.get("category") == FailureCategory.REAL_BUG.value
+    )
+
+
+def triage_with_gpt(result: Mapping[str, Any], *, client: Any = None) -> dict[str, Any] | None:
+    """Analyze a failure with GPT-5 mini, escalating uncertain results to GPT-5."""
+    error_msg = str(result.get("error_msg", ""))
+    if not error_msg:
+        return None
+
+    fp = fingerprint(error_msg)
+    cached = cache_lookup(fp)
+    if cached:
+        cached["cache_hit"] = True
+        cached["model_used"] = "cache"
+        store_triage_event(result.get("run_id"), fp, "openai", True)
+        return cached
+
+    client = client or _client()
+    if client is None:
+        print("[TestSentry] OPENAI_API_KEY is not set; skipping GPT triage.")
+        return None
+
+    context = build_analysis_context(result)
+    try:
+        mini = _call_model(client, GPT_MINI_MODEL, context)
+        selected = mini
+        model_used = GPT_MINI_MODEL
+        if _should_escalate(mini):
+            try:
+                selected = _call_model(client, GPT_ESCALATION_MODEL, context, review=mini)
+                model_used = GPT_ESCALATION_MODEL
+            except Exception as exc:
+                print(f"[TestSentry] GPT-5 escalation failed; keeping mini result: {exc}")
+        selected["cache_hit"] = False
+        selected["model_used"] = model_used
+        cache_store(fp, selected)
+        store_triage_event(result.get("run_id"), fp, "openai", False)
+        return selected
+    except Exception as exc:
+        print(f"[TestSentry] GPT triage failed: {exc}")
+        return None
+
+
+def triage_failure(result: dict) -> dict | None:
+    """Main AI entry point used by the API and pytest plugin."""
+    return triage_with_gpt(result)
+
+
+# Compatibility alias for callers that used the provider-specific name.
+def triage_with_openai(result: Mapping[str, Any]) -> dict[str, Any] | None:
+    return triage_with_gpt(result)
+
+
+__all__ = [
+    "FailureCategory",
+    "TriageResult",
+    "build_analysis_context",
+    "parse_triage_response",
+    "triage_failure",
+    "triage_with_gpt",
+    "triage_with_openai",
+]
+
+
+if __name__ == "__main__":
+    print("TestSentry GPT triage module loaded")

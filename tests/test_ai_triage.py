@@ -1,37 +1,103 @@
-from testsentry.ai_triage import triage_failure
-import os
+import json
+from types import SimpleNamespace
+
+import testsentry.ai_triage as ai
+
+
+class FakeCompletions:
+    def __init__(self, responses):
+        self.responses = iter(responses)
+        self.models = []
+
+    def create(self, *, model, **kwargs):
+        self.models.append(model)
+        payload = next(self.responses)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))],
+        )
+
+
+class FakeClient:
+    def __init__(self, responses):
+        self.chat = SimpleNamespace(completions=FakeCompletions(responses))
+
+
+def _result(**overrides):
+    value = {
+        "run_id": "run-1",
+        "test_name": "tests/login.spec.py::test_login",
+        "error_msg": "Timeout while locating button token=private-token",
+    }
+    value.update(overrides)
+    return value
+
+
+def _triage(category="ENV_ISSUE", confidence=92):
+    return {
+        "category": category,
+        "confidence_pct": confidence,
+        "why_it_failed": "The browser locator timed out.",
+        "suggested_fix": "Review the locator and wait condition in test code.",
+        "affected_module": "tests/login.spec.py",
+    }
 
 
 def test_triage_skips_empty_error():
-    """Should return None for empty error message."""
-    result = triage_failure({
-        "error_msg": "",
-        "test_name": "tests/test_sample.py::test_something"
-    })
-    assert result is None
+    assert ai.triage_failure({"error_msg": "", "test_name": "test_something"}) is None
 
 
 def test_triage_returns_none_without_key(monkeypatch):
-    """Should return None when no backend available."""
-    import testsentry.ai_triage as ai
-    from unittest.mock import patch
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert ai.triage_failure({"error_msg": "AssertionError", "test_name": "test_something"}) is None
 
-    # Mock both Ollama and Groq as unavailable
-    with patch("testsentry.ai_triage.is_ollama_running", return_value=False):
-        original_key = os.getenv("GROQ_API_KEY", "")
-        ai_module_key = ai.GROQ_API_KEY
-        ai.GROQ_API_KEY = ""
 
-        import os as _os
-        original_env = _os.environ.get("GROQ_API_KEY", "")
-        _os.environ["GROQ_API_KEY"] = ""
+def test_gpt_mini_handles_confident_failure_without_escalation(monkeypatch):
+    client = FakeClient([_triage()])
+    monkeypatch.setattr(ai, "cache_lookup", lambda _: None)
+    monkeypatch.setattr(ai, "cache_store", lambda *_: None)
+    monkeypatch.setattr(ai, "store_triage_event", lambda *args: None)
 
-        result = triage_failure({
-            "error_msg": "AssertionError: assert 1 == 2",
-            "test_name": "tests/test_sample.py::test_something"
-        })
+    result = ai.triage_with_gpt(_result(), client=client)
 
-        ai.GROQ_API_KEY = ai_module_key
-        _os.environ["GROQ_API_KEY"] = original_env
+    assert result["model_used"] == "gpt-5-mini"
+    assert result["cache_hit"] is False
+    assert client.chat.completions.models == ["gpt-5-mini"]
 
-    assert result is None
+
+def test_uncertain_real_bug_escalates_to_gpt5(monkeypatch):
+    client = FakeClient([_triage("REAL_BUG", 65), _triage("REAL_BUG", 96)])
+    monkeypatch.setattr(ai, "cache_lookup", lambda _: None)
+    monkeypatch.setattr(ai, "cache_store", lambda *_: None)
+    monkeypatch.setattr(ai, "store_triage_event", lambda *args: None)
+
+    result = ai.triage_with_gpt(_result(), client=client)
+
+    assert result["model_used"] == "gpt-5"
+    assert result["category"] == "REAL_BUG"
+    assert client.chat.completions.models == ["gpt-5-mini", "gpt-5"]
+
+
+def test_analysis_context_redacts_evidence_files(tmp_path):
+    (tmp_path / "page.html").write_text(
+        "<input name='password' value='do-not-store'>", encoding="utf-8"
+    )
+    (tmp_path / "browser.json").write_text(
+        '{"url": "https://example.test/?token=private-token"}', encoding="utf-8"
+    )
+
+    context = ai.build_analysis_context(_result(evidence_dir=str(tmp_path)))
+
+    assert "do-not-store" not in context
+    assert "private-token" not in context
+    assert "[REDACTED]" in context
+
+
+def test_cached_result_does_not_call_gpt(monkeypatch):
+    cached = _triage()
+    monkeypatch.setattr(ai, "cache_lookup", lambda _: cached)
+    monkeypatch.setattr(ai, "store_triage_event", lambda *args: None)
+
+    result = ai.triage_with_gpt(_result(), client=FakeClient([]))
+
+    assert result["cache_hit"] is True
+    assert result["model_used"] == "cache"

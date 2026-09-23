@@ -218,7 +218,7 @@ testsentry/
 │   └── cli.py                 # Click CLI — 8 commands
 ├── templates/
 │   └── report.html            # Jinja2 report template
-├── tests/                     # 51 tests; coverage depends on the current run
+├── tests/                     # 56 tests; coverage depends on the current run
 ├── scripts/
 │   └── generate_dataset.py    # 3000-example dataset generator
 ├── data/
@@ -258,7 +258,7 @@ MIT License — free to use, modify, and distribute.
 
 ---
 
-*TestSentry v2.1 — 7 modules · 51 tests · Fine-tuned AI · GitHub Actions
+*TestSentry v2.1 — 7 modules · 56 tests · Tiered GPT analysis · GitHub Actions
 
 ## Implementation status
 
@@ -267,12 +267,12 @@ MIT License — free to use, modify, and distribute.
 - Pytest result collection with setup, call, and teardown phase tracking.
 - DuckDB persistence for test results, completed-run metadata, triage cache, and AI events.
 - Health scoring, regression labels, flakiness analysis, ownership analysis, HTML reports, CLI commands, and dashboard API.
-- Optional local Ollama triage with Groq fallback and fingerprint-based caching.
+- Optional tiered GPT triage: GPT-5 mini for routine failures and GPT-5 escalation for uncertain or potentially real bugs, with fingerprint-based caching.
 - GitHub Actions execution and report artifact generation.
 
 ### Planned next phases
 
-The browser-repair roadmap is intentionally staged. Hosted GPT-5 mini/GPT-5 triage, retry classification, and safe test-only patch validation are still planned. Automatic changes to application logic are not planned; real application bugs must remain failed CI results.
+The browser-repair roadmap is intentionally staged. Retry classification and safe test-only patch validation remain planned. Automatic changes to application logic are not planned; real application bugs must remain failed CI results.
 
 ### Phase 1 stabilization
 
@@ -301,3 +301,9 @@ capture_selenium(bundle, driver, locator="button#login")
 ```
 
 The adapters are evidence collectors only. They do not change locators, application code, or test expectations. Candidate repair and validation will be added in a later phase.
+
+### Phase 3 GPT integration
+
+The AI analyzer now uses the OpenAI-compatible GPT-5 catalog. GPT-5 mini handles normal failure triage with strict JSON-schema output. Results with confidence below 80 percent or the `REAL_BUG` category are reviewed by GPT-5 with the preliminary result and sanitized evidence as context. If escalation fails, the validated GPT-5 mini result is retained; if no `OPENAI_API_KEY` is configured, triage is skipped without breaking test execution.
+
+The analyzer includes sanitized DOM, browser metadata, API evidence, locator information, and failure text when available. It never treats a `REAL_BUG` classification as an automatic repair candidate. Cached fingerprints avoid repeating analysis for identical failures.
