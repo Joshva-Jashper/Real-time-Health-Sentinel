@@ -9,7 +9,7 @@
 ![Groq](https://img.shields.io/badge/Groq-LLM%20triage-purple?style=flat-square)
 ![Langfuse](https://img.shields.io/badge/Langfuse-observability-orange?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-40%20passing-brightgreen?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-51%20passing-brightgreen?style=flat-square)
 ![Coverage](https://img.shields.io/badge/coverage-48%25-yellow?style=flat-square)
 
 ---
@@ -218,7 +218,7 @@ testsentry/
 │   └── cli.py                 # Click CLI — 8 commands
 ├── templates/
 │   └── report.html            # Jinja2 report template
-├── tests/                     # 45 tests; coverage depends on the current run
+├── tests/                     # 51 tests; coverage depends on the current run
 ├── scripts/
 │   └── generate_dataset.py    # 3000-example dataset generator
 ├── data/
@@ -258,7 +258,7 @@ MIT License — free to use, modify, and distribute.
 
 ---
 
-*TestSentry v2.1 — 7 modules · 45 tests · Fine-tuned AI · GitHub Actions
+*TestSentry v2.1 — 7 modules · 51 tests · Fine-tuned AI · GitHub Actions
 
 ## Implementation status
 
@@ -272,8 +272,32 @@ MIT License — free to use, modify, and distribute.
 
 ### Planned next phases
 
-The browser-repair roadmap is intentionally staged. Browser adapters for Selenium and Playwright, DOM and screenshot evidence collection, hosted GPT-5 mini/GPT-5 triage, retry classification, and safe test-only patch validation are not yet part of the current release. Automatic changes to application logic are not planned; real application bugs must remain failed CI results.
+The browser-repair roadmap is intentionally staged. Hosted GPT-5 mini/GPT-5 triage, retry classification, and safe test-only patch validation are still planned. Automatic changes to application logic are not planned; real application bugs must remain failed CI results.
 
 ### Phase 1 stabilization
 
 The repository test suite uses an isolated temporary DuckDB database so unit and regression tests do not add synthetic runs to a developer's dashboard database. The dashboard run selector and history use completed run metadata, while test-result views count only pytest call-phase records. The baseline repository suite is expected to pass before later browser and AI-repair phases are added.
+
+### Phase 2 evidence collection
+
+The optional `testsentry.evidence` module now captures sanitized failure bundles without requiring Selenium or Playwright to be installed by every project. A bundle can contain the failure text, browser metadata, DOM/page HTML, relevant interactive elements, screenshots, Playwright traces, and API request/response details. Passwords, tokens, cookies, authorization values, API keys, and sensitive URL query parameters are redacted before evidence is written.
+
+Synchronous Playwright usage:
+
+```python
+from testsentry.evidence import create_bundle, capture_playwright
+
+bundle = create_bundle("test-results", "tests/login.spec.py::valid_login")
+capture_playwright(bundle, page, locator="get_by_role('button', name='Log in')")
+```
+
+Selenium usage:
+
+```python
+from testsentry.evidence import create_bundle, capture_selenium
+
+bundle = create_bundle("test-results", "tests/test_login.py::test_valid_login")
+capture_selenium(bundle, driver, locator="button#login")
+```
+
+The adapters are evidence collectors only. They do not change locators, application code, or test expectations. Candidate repair and validation will be added in a later phase.
