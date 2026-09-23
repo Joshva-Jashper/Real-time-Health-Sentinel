@@ -31,6 +31,12 @@ _SENSITIVE_ASSIGNMENT = re.compile(
     r"\s*[:=]\s*)([^,;\s}\]]+)",
     re.IGNORECASE,
 )
+_SENSITIVE_HTML_VALUE = re.compile(
+    r"((?:name|id)\s*=\s*['\"](?:password|passwd|secret|token|api[_-]?key|"
+    r"access[_-]?token|refresh[_-]?token|client[_-]?secret)['\"][^>]*?"
+    r"value\s*=\s*['\"])(.*?)(['\"])",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -100,6 +106,7 @@ def redact_value(value: Any) -> Any:
 def redact_text(value: str) -> str:
     """Redact common secret assignments and sensitive URL query values."""
     text = _SENSITIVE_ASSIGNMENT.sub(r"\1[REDACTED]", str(value))
+    text = _SENSITIVE_HTML_VALUE.sub(r"\1[REDACTED]\3", text)
     if "?" in text:
         try:
             parts = urlsplit(text)

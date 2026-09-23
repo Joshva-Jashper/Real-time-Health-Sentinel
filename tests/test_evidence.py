@@ -45,6 +45,16 @@ class FakePlaywright:
         return b"png"
 
 
+class FailingPlaywright(FakePlaywright):
+    url = "https://example.test/login?token=playwright-secret"
+
+    def content(self):
+        return "<html><body><form><input name='password' value='do-not-store'></form></body></html>"
+
+    def locator(self, selector):
+        raise RuntimeError("Timeout 5000ms exceeded while waiting for token=private")
+
+
 def test_redact_text_hides_common_secrets():
     redacted = redact_text(
         "password=secret password: other token=abc https://x.test?a=1&api_key=hidden"
@@ -84,6 +94,27 @@ def test_playwright_capture_writes_dom_elements_and_screenshot(tmp_path):
     assert (bundle.path / "page.html").exists()
     assert (bundle.path / "elements.json").exists()
     assert (bundle.path / "screenshot.png").read_bytes() == b"png"
+
+
+def test_playwright_failed_locator_captures_sanitized_failure_evidence(tmp_path):
+    bundle = capture_failure(
+        tmp_path,
+        "tests/login.spec.py::test_login",
+        "Timeout while locating button token=private-token",
+        metadata={"authorization": "Bearer private-token"},
+    )
+    capture_playwright(bundle, FailingPlaywright(), locator="get_by_role('button')")
+
+    assert (bundle.path / "page.html").read_text(encoding="utf-8").find("do-not-store") == -1
+    element_error = (bundle.path / "elements-error.txt").read_text(encoding="utf-8")
+    assert "private" not in element_error
+    assert "[REDACTED]" in element_error
+    assert (bundle.path / "screenshot.png").read_bytes() == b"png"
+
+    browser = json.loads((bundle.path / "browser.json").read_text(encoding="utf-8"))
+    assert browser["framework"] == "playwright"
+    assert browser["url"] == "https://example.test/login?token=%5BREDACTED%5D"
+    assert browser["locator"] == "get_by_role('button')"
 
 
 def test_api_capture_redacts_headers_and_body(tmp_path):
