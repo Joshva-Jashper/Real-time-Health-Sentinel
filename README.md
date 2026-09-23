@@ -258,4 +258,22 @@ MIT License — free to use, modify, and distribute.
 
 ---
 
-*TestSentry v2.1 — 7 modules · 45 tests · Fine-tuned AI · GitHub Actions 
+*TestSentry v2.1 — 7 modules · 45 tests · Fine-tuned AI · GitHub Actions
+
+## Implementation status
+
+### Working today
+
+- Pytest result collection with setup, call, and teardown phase tracking.
+- DuckDB persistence for test results, completed-run metadata, triage cache, and AI events.
+- Health scoring, regression labels, flakiness analysis, ownership analysis, HTML reports, CLI commands, and dashboard API.
+- Optional local Ollama triage with Groq fallback and fingerprint-based caching.
+- GitHub Actions execution and report artifact generation.
+
+### Planned next phases
+
+The browser-repair roadmap is intentionally staged. Browser adapters for Selenium and Playwright, DOM and screenshot evidence collection, hosted GPT-5 mini/GPT-5 triage, retry classification, and safe test-only patch validation are not yet part of the current release. Automatic changes to application logic are not planned; real application bugs must remain failed CI results.
+
+### Phase 1 stabilization
+
+The repository test suite uses an isolated temporary DuckDB database so unit and regression tests do not add synthetic runs to a developer's dashboard database. The dashboard run selector and history use completed run metadata, while test-result views count only pytest call-phase records. The baseline repository suite is expected to pass before later browser and AI-repair phases are added.
