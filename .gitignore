@@ -22,6 +22,7 @@ dist/
 # Testing & coverage outputs
 .pytest_cache/
 .coverage
+testsentry-audit.jsonl
 htmlcov/
 tests/report.html
 

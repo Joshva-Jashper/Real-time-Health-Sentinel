@@ -111,7 +111,7 @@ def calculate_flakiness_per_test(test_name: str, window: int = 30, run_id: str =
     }
 
 
-def detect_time_patterns(test_name: str, window: int = 30) -> dict:
+def detect_time_patterns(test_name: str, window: int = 30, run_id: str = None) -> dict:
     """
     Detect if test failures follow time-based patterns.
     
