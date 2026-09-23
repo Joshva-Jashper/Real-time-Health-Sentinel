@@ -1,6 +1,11 @@
 """FastAPI backend for the TestSentry dashboard."""
 
+import json
 import os
+import threading
+import time
+from collections import defaultdict, deque
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -23,6 +28,25 @@ app = FastAPI(
     description="Test health analytics with optional AI triage.",
 )
 
+_MAX_BODY_BYTES = int(os.getenv("TESTSENTRY_MAX_BODY_BYTES", "1048576"))
+_TRIAGE_RATE_LIMIT = int(os.getenv("TESTSENTRY_TRIAGE_RATE_LIMIT", "30"))
+_TRIAGE_RATE_WINDOW = int(os.getenv("TESTSENTRY_TRIAGE_RATE_WINDOW", "60"))
+_rate_lock = threading.Lock()
+_triage_requests: dict[str, deque[float]] = defaultdict(deque)
+
+
+def _audit(event: str, request: Request, **details):
+    """Write minimal local audit records without storing request secrets."""
+    path = os.getenv("TESTSENTRY_AUDIT_LOG", "testsentry-audit.jsonl")
+    record = {"timestamp": datetime.now(timezone.utc).isoformat(), "event": event,
+              "path": request.url.path,
+              "client": request.client.host if request.client else "unknown", **details}
+    try:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+    except OSError:
+        pass
+
 # Make the dashboard safe to open before the first test run.
 init_db()
 
@@ -34,10 +58,24 @@ class TriageRequest(BaseModel):
 
 @app.middleware("http")
 async def api_key_guard(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > _MAX_BODY_BYTES:
+        return JSONResponse({"detail": "request body too large"}, status_code=413)
     expected = os.getenv("TESTSENTRY_API_KEY")
     if expected and request.url.path.startswith("/api/"):
         if request.headers.get("x-api-key") != expected:
             return JSONResponse({"detail": "API key required"}, status_code=401)
+    if request.url.path == "/api/triage-test" and request.method == "POST":
+        client_key = request.client.host if request.client else "unknown"
+        now = time.monotonic()
+        with _rate_lock:
+            calls = _triage_requests[client_key]
+            while calls and now - calls[0] > _TRIAGE_RATE_WINDOW:
+                calls.popleft()
+            if len(calls) >= _TRIAGE_RATE_LIMIT:
+                _audit("triage_rate_limited", request)
+                return JSONResponse({"detail": "triage rate limit exceeded"}, status_code=429)
+            calls.append(now)
     return await call_next(request)
 
 
@@ -210,13 +248,15 @@ def history(limit: int = Query(20, ge=1, le=100)):
 
 
 @app.post("/api/triage-test")
-def triage_test_endpoint(payload: TriageRequest):
+def triage_test_endpoint(payload: TriageRequest, request: Request):
     """Run AI triage for a failure supplied by the dashboard."""
     from testsentry.ai_triage import triage_failure
 
     result = triage_failure(
         {"test_name": payload.test_name, "error_msg": payload.error_msg}
     )
+    _audit("triage_request", request, test_name=payload.test_name,
+           result_category=(result or {}).get("category"))
     if not result:
         raise HTTPException(
             status_code=503,

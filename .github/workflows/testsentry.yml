@@ -9,70 +9,56 @@ on:
 jobs:
   testsentry:
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-
+          python-version: ${{ matrix.python-version }}
       - name: Cache pip dependencies
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          key: ${{ runner.os }}-python-${{ matrix.python-version }}-pip-${{ hashFiles('requirements.txt', 'requirements-lock.txt') }}
           restore-keys: |
-            ${{ runner.os }}-pip-
-
+            ${{ runner.os }}-python-${{ matrix.python-version }}-pip-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -e .
-
-      - name: Run tests with TestSentry
+          pip install pytest-cov selenium playwright
+          python -m playwright install --with-deps chromium
+      - name: Run unit and integration tests
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
-          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
-          LANGFUSE_HOST: https://cloud.langfuse.com
-        run: |
-          pytest tests/ -v --tb=short 2>&1
-
+          TESTSENTRY_API_KEY: ci-test-key
+        run: pytest tests/ -v --tb=short --cov=src/testsentry --cov-report=term-missing --cov-report=json
       - name: Generate TestSentry report
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
-          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
-          LANGFUSE_HOST: https://cloud.langfuse.com
-        run: |
-          testsentry scan || true
-
-      - name: Upload HTML report
-        uses: actions/upload-artifact@v4
         if: always()
+        run: testsentry scan --output report.html
+      - name: Upload HTML report and coverage
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: testsentry-report
-          path: report.html
+          name: testsentry-report-${{ matrix.python-version }}
+          path: |
+            report.html
+            coverage.json
           retention-days: 30
-
       - name: Post PR comment
-        if: github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request' && matrix.python-version == '3.11'
         uses: actions/github-script@v7
         with:
           script: |
-            const fs = require('fs');
-            const comment = `## 🛡️ TestSentry Health Report
-            
-            ✅ Tests completed. Download the full report from the Actions artifacts.
-            
-            > Run ID: ${{ github.run_id }}`;
-            
+            const comment = `## TestSentry Health Report
+            Tests and coverage completed. Download the report from the Actions artifacts.
+            Run ID: ${{ github.run_id }}`;
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,

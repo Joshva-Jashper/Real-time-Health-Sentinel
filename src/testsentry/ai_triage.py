@@ -31,6 +31,15 @@ _ESCALATION_CONFIDENCE = 80
 
 
 class FailureCategory(str, Enum):
+    LOCATOR_FAILURE = "LOCATOR_FAILURE"
+    WAIT_OR_TIMING_FAILURE = "WAIT_OR_TIMING_FAILURE"
+    API_CONTRACT_FAILURE = "API_CONTRACT_FAILURE"
+    TEST_CODE_FAILURE = "TEST_CODE_FAILURE"
+    APPLICATION_BUG = "APPLICATION_BUG"
+    AUTHENTICATION_FAILURE = "AUTHENTICATION_FAILURE"
+    ENVIRONMENT_FAILURE = "ENVIRONMENT_FAILURE"
+    UNKNOWN = "UNKNOWN"
+    # Legacy values remain accepted for cached results and backwards compatibility.
     REAL_BUG = "REAL_BUG"
     FLAKY = "FLAKY"
     ENV_ISSUE = "ENV_ISSUE"
@@ -74,15 +83,24 @@ _TRIAGE_SCHEMA = {
 
 _SYSTEM_PROMPT = """You are TestSentry's senior QA failure analyst.
 Classify the failure using exactly one category:
-- REAL_BUG: application or service behavior is incorrect; never recommend changing production logic just to make a test pass.
+- LOCATOR_FAILURE: a selector or locator no longer identifies the intended UI element.
+- WAIT_OR_TIMING_FAILURE: synchronization, timeout, race, or ordering problem.
+- API_CONTRACT_FAILURE: the service response/status/schema violates the expected contract.
+- TEST_CODE_FAILURE: the test itself is incorrect, including assertion/setup mistakes.
+- APPLICATION_BUG: application or service behavior is incorrect.
+- AUTHENTICATION_FAILURE: login, permissions, credentials, or security behavior failed.
+- ENVIRONMENT_FAILURE: browser, driver, network, CI, dependency, or infrastructure problem.
 - FLAKY: nondeterministic timing, ordering, race, or intermittent test behavior.
-- ENV_ISSUE: browser, driver, network, CI, dependency, or infrastructure problem.
 - DATA_ISSUE: invalid, missing, stale, or conflicting test data/configuration.
+- UNKNOWN: evidence is insufficient.
+- REAL_BUG and ENV_ISSUE are legacy aliases; prefer the specific categories above.
 
 Use DOM and API evidence when present. A missing locator is not automatically a
 real bug: distinguish a changed UI contract from a genuinely broken behavior.
 Suggest changes to test code, selectors, waits, fixtures, or environment only
-when justified. Never propose an automatic correction for REAL_BUG.
+when justified. Never propose an automatic correction for APPLICATION_BUG,
+REAL_BUG, API_CONTRACT_FAILURE, AUTHENTICATION_FAILURE, ENVIRONMENT_FAILURE,
+ENV_ISSUE, DATA_ISSUE, or UNKNOWN. These failures must remain CI failures.
 Return only the requested JSON object."""
 
 
@@ -180,8 +198,19 @@ def _call_model(client: Any, model: str, context: str, review: dict[str, Any] | 
 def _should_escalate(triage: Mapping[str, Any]) -> bool:
     return (
         int(triage.get("confidence_pct", 0)) < _ESCALATION_CONFIDENCE
-        or triage.get("category") == FailureCategory.REAL_BUG.value
+        or triage.get("category") in {
+            FailureCategory.APPLICATION_BUG.value,
+            FailureCategory.API_CONTRACT_FAILURE.value,
+            FailureCategory.AUTHENTICATION_FAILURE.value,
+            FailureCategory.REAL_BUG.value,
+        }
     )
+
+
+def automatic_repair_allowed(triage: Mapping[str, Any]) -> bool:
+    """Allow candidate repair only for narrowly scoped test-side failures."""
+    from testsentry.repair import repair_allowed
+    return repair_allowed(str(triage.get("category", "UNKNOWN")))
 
 
 def triage_with_gpt(result: Mapping[str, Any], *, client: Any = None) -> dict[str, Any] | None:
@@ -242,6 +271,7 @@ __all__ = [
     "triage_failure",
     "triage_with_gpt",
     "triage_with_openai",
+    "automatic_repair_allowed",
 ]
 
 

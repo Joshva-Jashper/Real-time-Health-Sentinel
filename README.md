@@ -269,10 +269,15 @@ MIT License — free to use, modify, and distribute.
 - Health scoring, regression labels, flakiness analysis, ownership analysis, HTML reports, CLI commands, and dashboard API.
 - Optional tiered GPT triage: GPT-5 mini for routine failures and GPT-5 escalation for uncertain or potentially real bugs, with fingerprint-based caching.
 - GitHub Actions execution and report artifact generation.
+- Specific triage categories for locator, timing, API contract, test-code, application, authentication, environment, flaky, data, and unknown failures.
+- Automatic-repair safety gates: only locator, timing, flaky, and test-code categories may enter candidate validation; application, API, authentication, environment, data, and unknown failures remain CI failures.
+- Isolated candidate patch validation through `testsentry validate-repair`; it applies a unified diff in a temporary copy, runs the failed test and related suite, and rejects non-test file changes.
+- API request-size limits, triage rate limiting, API-key enforcement when configured, CORS support for `X-API-Key`, and sanitized local audit events.
+- CI coverage generation, Python 3.11/3.12 matrix testing, browser dependencies, and failure-preserving report generation.
 
 ### Planned next phases
 
-The browser-repair roadmap is intentionally staged. Retry classification and safe test-only patch validation remain planned. Automatic changes to application logic are not planned; real application bugs must remain failed CI results.
+The browser-repair roadmap remains intentionally conservative. Candidate validation is implemented locally, but branch creation, pushing, and pull-request creation are not automated. A human must review an accepted candidate before committing or opening a PR. Automatic changes to application logic are not planned; real application bugs must remain failed CI results.
 
 ### Phase 1 stabilization
 
@@ -300,7 +305,7 @@ bundle = create_bundle("test-results", "tests/test_login.py::test_valid_login")
 capture_selenium(bundle, driver, locator="button#login")
 ```
 
-The adapters are evidence collectors only. They do not change locators, application code, or test expectations. Candidate repair and validation will be added in a later phase.
+The adapters are evidence collectors only. They do not change locators, application code, or test expectations. Candidate repair validation is available separately and is restricted to test-only diffs in a temporary workspace.
 
 ### Phase 3 GPT integration
 

@@ -185,6 +185,26 @@ def version():
     click.echo("Intelligent Test Suite Health Monitor")
     click.echo("Built at Sri Shakthi Institute of Engineering and Technology")
 
+
+@cli.command("validate-repair")
+@click.option("--patch", "patch_path", required=True, type=click.Path(exists=True, dir_okay=False), help="Candidate unified diff")
+@click.option("--category", required=True, help="AI triage category")
+@click.option("--test", "failed_test", required=True, help="Failed pytest node or path")
+@click.option("--suite", "related_suite", default=None, help="Related test file/directory")
+@click.option("--project", default=".", type=click.Path(exists=True, file_okay=False), help="Project root")
+def validate_repair(patch_path, category, failed_test, related_suite, project):
+    """Validate a test-only candidate patch in an isolated temporary copy."""
+    from testsentry.repair import validate_candidate_patch
+
+    patch = open(patch_path, encoding="utf-8").read()
+    result = validate_candidate_patch(project, patch, category, failed_test, related_suite=related_suite)
+    icon = "✅" if result.accepted else "❌"
+    click.echo(f"{icon} {result.reason}")
+    if result.changed_files:
+        click.echo("Changed files: " + ", ".join(result.changed_files))
+    if not result.accepted:
+        raise click.ClickException("candidate repair was rejected")
+
 @cli.command()
 def coverage():
     """Show code coverage report per module."""
