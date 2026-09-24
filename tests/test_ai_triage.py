@@ -124,3 +124,15 @@ def test_ollama_backend_uses_local_model_and_json_mode(monkeypatch):
     assert client.chat.completions.requests[0]["max_tokens"] == 700
     assert client.chat.completions.requests[0]["response_format"] == {"type": "json_object"}
     assert "extra_body" not in client.chat.completions.requests[0]
+
+
+def test_empty_model_explanation_fields_get_fallbacks():
+    result = ai.parse_triage_response({
+        "category": "APPLICATION_BUG",
+        "confidence_pct": 100,
+        "why_it_failed": "",
+        "suggested_fix": "",
+        "affected_module": "tests/example.py",
+    })
+    assert result["why_it_failed"]
+    assert result["suggested_fix"]

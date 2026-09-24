@@ -14,7 +14,9 @@ def label_test(result: dict, run_id: str) -> str:
     """, [test_name, run_id]).fetchall()
     previous = [row[0] for row in history]
     if not previous:
-        return "NEW_TEST"
+        # A first-seen passing test is new; a first-seen failure is actionable
+        # immediately and should appear in the newly-failing dashboard count.
+        return "NEWLY_FAILING" if current_status == "FAILED" else "NEW_TEST"
     prev = previous[0]
     if prev == "PASSED" and current_status == "FAILED":
         return "REOPENED" if len(previous) > 1 and previous[1] == "FAILED" else "NEWLY_FAILING"

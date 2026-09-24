@@ -14,6 +14,16 @@ def test_new_test_label():
     assert label == "NEW_TEST"
 
 
+def test_first_seen_failure_is_newly_failing():
+    result = {
+        "test_name": "tests/test_new_unique_xyz.py::test_first_failure",
+        "status": "FAILED",
+        "error_msg": "AssertionError",
+        "duration": 0.001,
+    }
+    assert label_test(result, "run_first_failure") == "NEWLY_FAILING"
+
+
 def test_newly_failing_label():
     """Was passing, now failing — should be NEWLY_FAILING."""
     

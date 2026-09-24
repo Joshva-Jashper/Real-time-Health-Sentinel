@@ -126,6 +126,13 @@ def parse_triage_response(content: str | Mapping[str, Any]) -> dict[str, Any]:
     data["confidence_pct"] = max(0, min(100, int(data.get("confidence_pct", 0))))
     for key in ("why_it_failed", "suggested_fix", "affected_module"):
         data[key] = str(data.get(key, ""))
+    if not data["suggested_fix"].strip():
+        data["suggested_fix"] = (
+            "Review the failure evidence and update the affected test, locator, "
+            "fixture, or application behavior as appropriate."
+        )
+    if not data["why_it_failed"].strip():
+        data["why_it_failed"] = "The model returned insufficient failure details; inspect the captured error and evidence."
     return TriageResult.model_validate(data).model_dump(mode="json")
 
 
