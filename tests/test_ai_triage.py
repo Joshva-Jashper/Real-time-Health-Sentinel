@@ -49,11 +49,13 @@ def test_triage_skips_empty_error():
 
 
 def test_triage_returns_none_without_key(monkeypatch):
+    monkeypatch.setattr(ai, "TRIAGE_BACKEND", "openai")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     assert ai.triage_failure({"error_msg": "AssertionError", "test_name": "test_something"}) is None
 
 
 def test_gpt_mini_handles_confident_failure_without_escalation(monkeypatch):
+    monkeypatch.setattr(ai, "TRIAGE_BACKEND", "openai")
     client = FakeClient([_triage()])
     monkeypatch.setattr(ai, "cache_lookup", lambda _: None)
     monkeypatch.setattr(ai, "cache_store", lambda *_: None)
@@ -67,6 +69,7 @@ def test_gpt_mini_handles_confident_failure_without_escalation(monkeypatch):
 
 
 def test_uncertain_real_bug_escalates_to_gpt5(monkeypatch):
+    monkeypatch.setattr(ai, "TRIAGE_BACKEND", "openai")
     client = FakeClient([_triage("REAL_BUG", 65), _triage("REAL_BUG", 96)])
     monkeypatch.setattr(ai, "cache_lookup", lambda _: None)
     monkeypatch.setattr(ai, "cache_store", lambda *_: None)
