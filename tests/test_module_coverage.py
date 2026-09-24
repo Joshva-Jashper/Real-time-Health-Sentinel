@@ -156,6 +156,24 @@ def test_environmental_alternation_is_flaky():
     assert metrics["is_flaky"] is True
 
 
+def test_legacy_rows_are_backfilled_for_flaky_history():
+    name = "tests/test_flaky.py::test_legacy_history"
+    conn = collector.get_connection()
+    for index, status in enumerate(["PASSED", "FAILED", "PASSED"]):
+        conn.execute(
+            "INSERT INTO test_runs (run_id,test_name,status,duration,error_msg,label,phase,timestamp,code_revision,environment_signature) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            [f"legacy-{index}", name, status, 0.1,
+             "TimeoutError: network" if status == "FAILED" else None,
+             "STABLE", "call", datetime(2026, 4, 1, 9) + timedelta(days=index), None, None],
+        )
+    collector.init_db()
+
+    metrics = flaky.calculate_flakiness_per_test(name)
+
+    assert metrics["total_runs"] == 3
+    assert metrics["is_flaky"] is True
+
+
 def test_email_send_success_and_failure(monkeypatch):
     class SMTP:
         def __init__(self, *args): self.sent = False

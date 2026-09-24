@@ -116,6 +116,18 @@ def init_db():
             conn.execute(f"ALTER TABLE test_runs ADD COLUMN {col_def[0]} {col_def[1]}")
         except Exception:
             pass
+    # Rows created before context fingerprints were introduced are legacy data.
+    # Treat them as belonging to the current project context so they continue
+    # to participate in historical flakiness analysis.
+    conn.execute(
+        """
+        UPDATE test_runs
+        SET code_revision = COALESCE(code_revision, ?),
+            environment_signature = COALESCE(environment_signature, ?)
+        WHERE code_revision IS NULL OR environment_signature IS NULL
+        """,
+        [CODE_REVISION, ENVIRONMENT_SIGNATURE],
+    )
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS run_metadata (
