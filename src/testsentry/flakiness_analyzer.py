@@ -3,6 +3,21 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 
 
+def _same_context(test_name: str) -> tuple[str | None, str | None]:
+    """Return the latest code/environment identity recorded for this test."""
+    conn = get_connection()
+    row = conn.execute(
+        """
+        SELECT code_revision, environment_signature
+        FROM test_runs
+        WHERE test_name = CAST(? AS VARCHAR) AND phase = 'call'
+        ORDER BY timestamp DESC, rowid DESC LIMIT 1
+        """,
+        [str(test_name)],
+    ).fetchone()
+    return (row[0], row[1]) if row else (None, None)
+
+
 def calculate_flakiness_per_test(test_name: str, window: int = 30, run_id: str = None) -> dict:
     """
     Calculate detailed flakiness metrics for a single test.
@@ -21,6 +36,7 @@ def calculate_flakiness_per_test(test_name: str, window: int = 30, run_id: str =
     }
     """
     conn = get_connection()
+    code_revision, environment_signature = _same_context(test_name)
     
     cutoff = None
     if run_id:
@@ -29,8 +45,10 @@ def calculate_flakiness_per_test(test_name: str, window: int = 30, run_id: str =
     query = """
         SELECT status, timestamp FROM test_runs
         WHERE test_name = CAST(? AS VARCHAR) AND phase = 'call'
+          AND code_revision IS NOT DISTINCT FROM ?
+          AND environment_signature IS NOT DISTINCT FROM ?
     """
-    params = [str(test_name)]
+    params = [str(test_name), code_revision, environment_signature]
     if cutoff is not None:
         query += " AND timestamp <= ?"
         params.append(cutoff)
@@ -128,6 +146,7 @@ def detect_time_patterns(test_name: str, window: int = 30, run_id: str = None) -
     }
     """
     conn = get_connection()
+    code_revision, environment_signature = _same_context(test_name)
     
     cutoff = None
     if run_id:
@@ -136,8 +155,10 @@ def detect_time_patterns(test_name: str, window: int = 30, run_id: str = None) -
     query = """
         SELECT status, timestamp FROM test_runs
         WHERE test_name = CAST(? AS VARCHAR) AND phase = 'call'
+          AND code_revision IS NOT DISTINCT FROM ?
+          AND environment_signature IS NOT DISTINCT FROM ?
     """
-    params = [str(test_name)]
+    params = [str(test_name), code_revision, environment_signature]
     if cutoff is not None:
         query += " AND timestamp <= ?"
         params.append(cutoff)
@@ -213,14 +234,17 @@ def detect_error_patterns(test_name: str, window: int = 30) -> dict:
     }
     """
     conn = get_connection()
+    code_revision, environment_signature = _same_context(test_name)
     
     rows = conn.execute("""
         SELECT error_msg, status
         FROM test_runs
         WHERE test_name = CAST(? AS VARCHAR) AND status = 'FAILED' AND phase = 'call'
+          AND code_revision IS NOT DISTINCT FROM ?
+          AND environment_signature IS NOT DISTINCT FROM ?
         ORDER BY timestamp ASC
         LIMIT ?
-    """, [str(test_name), int(window)]).fetchall()
+    """, [str(test_name), code_revision, environment_signature, int(window)]).fetchall()
     
     pass  # shared connection — do not close
     

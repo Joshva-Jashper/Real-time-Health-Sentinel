@@ -1,5 +1,9 @@
 import duckdb
+import hashlib
 import os
+import platform
+import subprocess
+import sys
 import threading
 from datetime import datetime
 from testsentry.fingerprinter import fingerprint
@@ -8,6 +12,21 @@ from testsentry.fingerprinter import fingerprint
 DB_PATH = os.path.join(os.getcwd(), "testsentry.db")
 # Namespace cache entries by project; an explicit value supports shared deployments.
 CACHE_NAMESPACE = os.getenv("TESTSENTRY_CACHE_NAMESPACE", os.path.abspath(os.getcwd()))
+
+
+def _code_revision() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, text=True
+        ).strip() or "NO_GIT_REVISION"
+    except (OSError, subprocess.CalledProcessError):
+        return "NO_GIT_REVISION"
+
+
+CODE_REVISION = _code_revision()
+ENVIRONMENT_SIGNATURE = hashlib.sha256(
+    f"{sys.version}|{platform.platform()}|{sys.executable}".encode()
+).hexdigest()[:16]
 def cache_key(fp: str) -> str:
     return fingerprint(f"{CACHE_NAMESPACE}:{fp}")
 
@@ -71,7 +90,9 @@ def init_db():
             fingerprint VARCHAR,
             label       VARCHAR DEFAULT 'STABLE',
             phase       VARCHAR DEFAULT 'call',
-            timestamp   TIMESTAMP
+            timestamp   TIMESTAMP,
+            code_revision VARCHAR,
+            environment_signature VARCHAR
         )
     """)
     try:
@@ -87,6 +108,14 @@ def init_db():
         conn.execute("ALTER TABLE test_runs ADD COLUMN fingerprint VARCHAR")
     except Exception:
         pass
+    for col_def in [
+        ("code_revision", "VARCHAR"),
+        ("environment_signature", "VARCHAR"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE test_runs ADD COLUMN {col_def[0]} {col_def[1]}")
+        except Exception:
+            pass
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS run_metadata (
@@ -137,10 +166,12 @@ def store_result(result: dict, run_id: str, label: str = "NEW_TEST", phase: str 
         fp = fingerprint(result["error_msg"]) if result.get("error_msg") else None
         conn.execute("""
             INSERT INTO test_runs
-                (run_id, test_name, status, duration, error_msg, fingerprint, label, phase, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (run_id, test_name, status, duration, error_msg, fingerprint, label, phase,
+                 timestamp, code_revision, environment_signature)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, [run_id, result["test_name"], result["status"], result.get("duration", 0),
-              result.get("error_msg"), fp, label, phase, datetime.now()])
+              result.get("error_msg"), fp, label, phase, datetime.now(),
+              CODE_REVISION, ENVIRONMENT_SIGNATURE])
 
 
 def store_triage_event(run_id: str | None, fp: str, backend: str, cache_hit: bool):
