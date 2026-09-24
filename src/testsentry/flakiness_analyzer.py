@@ -60,27 +60,27 @@ def calculate_flakiness_per_test(test_name: str, window: int = 30, run_id: str =
     
     failure_rate = (failed / total_runs * 100) if total_runs > 0 else 0.0
     
-    if failure_rate == 0:
-        flakiness_rating = 'STABLE'
-    elif failure_rate < 10:
-        flakiness_rating = 'LOW'
-    elif failure_rate < 40:
-        flakiness_rating = 'MEDIUM'
-    elif failure_rate < 70:
-        flakiness_rating = 'HIGH'
-    else:
-        flakiness_rating = 'CRITICAL'
-    
-    
+    # Flakiness requires evidence of repeated alternation, not a single
+    # failure. A test must have at least three real call results and at least
+    # two status transitions (for example PASSED -> FAILED -> PASSED).
     status_changes = 0
     for i in range(len(statuses) - 1):
         if statuses[i] != statuses[i + 1]:
             status_changes += 1
-    
-    if failure_rate == 0 or failure_rate == 100:
-        is_flaky = False
+
+    status_change_rate = round((status_changes / max(total_runs - 1, 1)) * 100, 2)
+    if status_change_rate == 0:
+        flakiness_rating = 'STABLE'
+    elif status_change_rate < 10:
+        flakiness_rating = 'LOW'
+    elif status_change_rate < 40:
+        flakiness_rating = 'MEDIUM'
+    elif status_change_rate < 70:
+        flakiness_rating = 'HIGH'
     else:
-        is_flaky = status_changes > 0
+        flakiness_rating = 'CRITICAL'
+
+    is_flaky = total_runs >= 3 and 0 < failure_rate < 100 and status_changes >= 2
 
     
     trend = 'STABLE'
@@ -95,7 +95,6 @@ def calculate_flakiness_per_test(test_name: str, window: int = 30, run_id: str =
         elif second_fail_rate < first_fail_rate * 0.8:
             trend = 'IMPROVING'
     
-    status_change_rate = round((status_changes / max(total_runs - 1, 1)) * 100, 2)
     return {
         'test_name': test_name,
         'total_runs': total_runs,

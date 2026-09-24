@@ -97,6 +97,27 @@ def test_flakiness_ignores_setup_and_teardown_rows():
     assert metrics["status_changes"] == 2
 
 
+def test_single_failure_is_not_flaky():
+    name = "tests/test_flaky.py::test_single_failure"
+    _insert_history(name, ["PASSED", "PASSED", "FAILED"])
+
+    metrics = flaky.calculate_flakiness_per_test(name)
+
+    assert metrics["status_changes"] == 1
+    assert metrics["is_flaky"] is False
+    assert metrics["flakiness_rating"] == "HIGH"
+
+
+def test_repeated_pass_fail_alternation_is_flaky():
+    name = "tests/test_flaky.py::test_alternating"
+    _insert_history(name, ["PASSED", "FAILED", "PASSED"])
+
+    metrics = flaky.calculate_flakiness_per_test(name)
+
+    assert metrics["status_changes"] == 2
+    assert metrics["is_flaky"] is True
+
+
 def test_email_send_success_and_failure(monkeypatch):
     class SMTP:
         def __init__(self, *args): self.sent = False
