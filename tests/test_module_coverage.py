@@ -72,6 +72,31 @@ def test_flakiness_analysis_trends_patterns_and_summary():
     assert flaky.calculate_flakiness_per_test("missing")["flakiness_rating"] == "UNKNOWN"
 
 
+def test_flakiness_ignores_setup_and_teardown_rows():
+    name = "tests/test_phases.py::test_three_runs"
+    conn = collector.get_connection()
+    rows = []
+    for index, status in enumerate(["PASSED", "FAILED", "PASSED"]):
+        timestamp = datetime(2026, 2, 1, 9) + timedelta(days=index)
+        rows.extend([
+            (f"phase-{index}", name, "PASSED", "setup", timestamp),
+            (f"phase-{index}", name, status, "call", timestamp + timedelta(seconds=1)),
+            (f"phase-{index}", name, "PASSED", "teardown", timestamp + timedelta(seconds=2)),
+        ])
+    conn.executemany(
+        "INSERT INTO test_runs (run_id,test_name,status,duration,error_msg,label,phase,timestamp) VALUES (?,?,?,?,?,?,?,?)",
+        [(run_id, test_name, status, 0.1, None, "STABLE", phase, timestamp)
+         for run_id, test_name, status, phase, timestamp in rows],
+    )
+
+    metrics = flaky.calculate_flakiness_per_test(name)
+
+    assert metrics["total_runs"] == 3
+    assert metrics["passed"] == 2
+    assert metrics["failed"] == 1
+    assert metrics["status_changes"] == 2
+
+
 def test_email_send_success_and_failure(monkeypatch):
     class SMTP:
         def __init__(self, *args): self.sent = False

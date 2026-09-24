@@ -28,7 +28,7 @@ def calculate_flakiness_per_test(test_name: str, window: int = 30, run_id: str =
         cutoff = cutoff_row[0] if cutoff_row else None
     query = """
         SELECT status, timestamp FROM test_runs
-        WHERE test_name = CAST(? AS VARCHAR)
+        WHERE test_name = CAST(? AS VARCHAR) AND phase = 'call'
     """
     params = [str(test_name)]
     if cutoff is not None:
@@ -136,7 +136,7 @@ def detect_time_patterns(test_name: str, window: int = 30, run_id: str = None) -
         cutoff = cutoff_row[0] if cutoff_row else None
     query = """
         SELECT status, timestamp FROM test_runs
-        WHERE test_name = CAST(? AS VARCHAR)
+        WHERE test_name = CAST(? AS VARCHAR) AND phase = 'call'
     """
     params = [str(test_name)]
     if cutoff is not None:
@@ -218,7 +218,7 @@ def detect_error_patterns(test_name: str, window: int = 30) -> dict:
     rows = conn.execute("""
         SELECT error_msg, status
         FROM test_runs
-        WHERE test_name = CAST(? AS VARCHAR) AND status = 'FAILED'
+        WHERE test_name = CAST(? AS VARCHAR) AND status = 'FAILED' AND phase = 'call'
         ORDER BY timestamp ASC
         LIMIT ?
     """, [str(test_name), int(window)]).fetchall()
@@ -289,13 +289,14 @@ def get_all_flaky_tests(run_id: str = None) -> list:
         tests = conn.execute("""
             SELECT DISTINCT test_name
             FROM test_runs
-            WHERE run_id = ?
+            WHERE run_id = ? AND phase = 'call'
             ORDER BY test_name
         """, [run_id]).fetchall()
     else:
         tests = conn.execute("""
             SELECT DISTINCT test_name
             FROM test_runs
+            WHERE phase = 'call'
             ORDER BY test_name
         """).fetchall()
     
