@@ -8,9 +8,11 @@ class FakeCompletions:
     def __init__(self, responses):
         self.responses = iter(responses)
         self.models = []
+        self.requests = []
 
     def create(self, *, model, **kwargs):
         self.models.append(model)
+        self.requests.append(kwargs)
         payload = next(self.responses)
         return SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))],
@@ -101,3 +103,21 @@ def test_cached_result_does_not_call_gpt(monkeypatch):
 
     assert result["cache_hit"] is True
     assert result["model_used"] == "cache"
+
+
+def test_ollama_backend_uses_local_model_and_json_mode(monkeypatch):
+    client = FakeClient([_triage("LOCATOR_FAILURE", 94)])
+    monkeypatch.setattr(ai, "TRIAGE_BACKEND", "ollama")
+    monkeypatch.setattr(ai, "OLLAMA_MODEL", "qwen2.5-coder:7b")
+    monkeypatch.setattr(ai, "cache_lookup", lambda _: None)
+    monkeypatch.setattr(ai, "cache_store", lambda *_: None)
+    monkeypatch.setattr(ai, "store_triage_event", lambda *args: None)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    result = ai.triage_with_gpt(_result(), client=client)
+
+    assert result["model_used"] == "ollama:qwen2.5-coder:7b"
+    assert client.chat.completions.models == ["qwen2.5-coder:7b"]
+    assert client.chat.completions.requests[0]["max_tokens"] == 700
+    assert client.chat.completions.requests[0]["response_format"] == {"type": "json_object"}
+    assert "extra_body" not in client.chat.completions.requests[0]

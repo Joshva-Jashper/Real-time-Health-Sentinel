@@ -24,6 +24,9 @@ from testsentry.fingerprinter import fingerprint
 load_dotenv()
 langfuse = get_client()
 
+TRIAGE_BACKEND = os.getenv("TRIAGE_BACKEND", "openai").strip().lower()
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1").strip()
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b").strip()
 GPT_MINI_MODEL = "gpt-5-mini"
 GPT_ESCALATION_MODEL = "gpt-5"
 _MAX_EVIDENCE_CHARS = 12_000
@@ -159,6 +162,13 @@ def build_analysis_context(result: Mapping[str, Any]) -> str:
 
 def _client():
     """Create the OpenAI-compatible client lazily so offline test runs work."""
+    if TRIAGE_BACKEND == "ollama":
+        from openai import OpenAI
+
+        return OpenAI(
+            base_url=OLLAMA_BASE_URL,
+            api_key=os.getenv("OLLAMA_API_KEY", "ollama"),
+        )
     if not os.getenv("OPENAI_API_KEY"):
         return None
     from openai import OpenAI
@@ -172,23 +182,29 @@ def _call_model(client: Any, model: str, context: str, review: dict[str, Any] | 
         user_prompt += "\n\nPreliminary GPT-5 mini result to review:\n" + json.dumps(review)
         user_prompt += "\nRe-evaluate it carefully; preserve it only if the evidence supports it."
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
+    request = {
+        "model": model,
+        "messages": [
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
-        max_completion_tokens=700,
-        extra_body={"reasoning": {"effort": "minimal" if model == GPT_MINI_MODEL else "medium"}},
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "testsentry_triage",
-                "strict": True,
-                "schema": _TRIAGE_SCHEMA,
+    }
+    if TRIAGE_BACKEND == "ollama":
+        request.update(max_tokens=700, response_format={"type": "json_object"})
+    else:
+        request.update(
+            max_completion_tokens=700,
+            extra_body={"reasoning": {"effort": "minimal" if model == GPT_MINI_MODEL else "medium"}},
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "testsentry_triage",
+                    "strict": True,
+                    "schema": _TRIAGE_SCHEMA,
+                },
             },
-        },
-    )
+        )
+    response = client.chat.completions.create(**request)
     content = response.choices[0].message.content
     if not content:
         raise ValueError(f"{model} returned an empty response")
@@ -221,32 +237,36 @@ def triage_with_gpt(result: Mapping[str, Any], *, client: Any = None) -> dict[st
 
     fp = fingerprint(error_msg)
     cached = cache_lookup(fp)
+    backend = "ollama" if TRIAGE_BACKEND == "ollama" else "openai"
     if cached:
         cached["cache_hit"] = True
         cached["model_used"] = "cache"
-        store_triage_event(result.get("run_id"), fp, "openai", True)
+        store_triage_event(result.get("run_id"), fp, backend, True)
         return cached
 
     client = client or _client()
     if client is None:
-        print("[TestSentry] OPENAI_API_KEY is not set; skipping GPT triage.")
+        provider = "OPENAI_API_KEY" if backend == "openai" else "Ollama"
+        print(f"[TestSentry] {provider} is not configured; skipping GPT triage.")
         return None
 
     context = build_analysis_context(result)
     try:
-        mini = _call_model(client, GPT_MINI_MODEL, context)
+        mini_model = OLLAMA_MODEL if backend == "ollama" else GPT_MINI_MODEL
+        escalation_model = OLLAMA_MODEL if backend == "ollama" else GPT_ESCALATION_MODEL
+        mini = _call_model(client, mini_model, context)
         selected = mini
-        model_used = GPT_MINI_MODEL
+        model_used = f"ollama:{mini_model}" if backend == "ollama" else mini_model
         if _should_escalate(mini):
             try:
-                selected = _call_model(client, GPT_ESCALATION_MODEL, context, review=mini)
-                model_used = GPT_ESCALATION_MODEL
+                selected = _call_model(client, escalation_model, context, review=mini)
+                model_used = f"ollama:{escalation_model}" if backend == "ollama" else escalation_model
             except Exception as exc:
                 print(f"[TestSentry] GPT-5 escalation failed; keeping mini result: {exc}")
         selected["cache_hit"] = False
         selected["model_used"] = model_used
         cache_store(fp, selected)
-        store_triage_event(result.get("run_id"), fp, "openai", False)
+        store_triage_event(result.get("run_id"), fp, backend, False)
         return selected
     except Exception as exc:
         print(f"[TestSentry] GPT triage failed: {exc}")

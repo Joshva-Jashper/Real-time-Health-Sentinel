@@ -65,6 +65,31 @@ testsentry scan
 open report.html
 ```
 
+### Free local AI triage with Ollama
+
+OpenAI is the default hosted backend, but AI triage can run locally without an
+OpenAI API key. Install [Ollama](https://ollama.com/download), start it, and
+download a coding-capable model:
+
+```bash
+ollama pull qwen2.5-coder:7b
+```
+
+Create `.env` from `.env.example` or set:
+
+```env
+TRIAGE_BACKEND=ollama
+OLLAMA_MODEL=qwen2.5-coder:7b
+OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
+```
+
+TestSentry uses Ollama's OpenAI-compatible local endpoint. No `OPENAI_API_KEY`,
+OpenAI billing, GPU, or Python Ollama package is required. CPU-only execution
+works, though a GPU can make responses faster. If Ollama is not running or the
+model is missing, the test run still completes and AI triage is reported as
+unavailable; monitoring, persistence, regression labels, and reports remain
+available.
+
 ---
 
 ## 🏗️ Architecture
