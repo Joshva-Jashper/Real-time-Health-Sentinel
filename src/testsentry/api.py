@@ -184,6 +184,9 @@ def test_results(run_id: str):
             "duration": row[2],
             "error_msg": row[3],
             "label": row[4],
+            "labels": (["NEW_TEST", "NEWLY_FAILING"]
+                       if row[4] == "NEW_TEST" and row[1] == "FAILED"
+                       else [row[4]] if row[4] else []),
             "timestamp": str(row[5]),
         }
         for row in rows

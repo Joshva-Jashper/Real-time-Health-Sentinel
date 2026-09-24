@@ -218,7 +218,7 @@ function renderTestsTable(rows) {
     <tr>
       <td><span class="mono truncate" title="${esc(r.test_name)}">${esc(r.test_name)}</span></td>
       <td><span class="badge badge-${String(r.status || "").toLowerCase()}">${r.status === "PASSED" ? "PASS" : "FAIL"} ${esc(r.status || "UNKNOWN")}</span></td>
-      <td><span class="badge badge-${labelClass(r.label)}">${labelIcon(r.label)} ${esc(r.label || "UNLABELED")}</span></td>
+      <td>${renderLabels(r)}</td>
       <td><span class="mono">${Number.isFinite(r.duration) ? Number(r.duration).toFixed(4) : "—"}s</span></td>
       <td><span class="truncate-lg" style="font-size:12px;color:var(--text3)" title="${esc(r.error_msg || '')}">${esc(r.error_msg || '—')}</span></td>
       <td>
@@ -501,6 +501,10 @@ function labelClass(label) {
 function labelIcon(label) {
   const map = { NEWLY_FAILING:"🔴", FIXED:"✅", STILL_FAILING:"⚠️", STABLE:"✓", NEW_TEST:"🆕", REOPENED:"🔁" };
   return map[label] || "";
+}
+function renderLabels(row) {
+  const labels = Array.isArray(row.labels) && row.labels.length ? row.labels : [row.label];
+  return labels.map(label => `<span class="badge badge-${labelClass(label)}">${labelIcon(label)} ${esc(label || "UNLABELED")}</span>`).join(" ");
 }
 function trendIcon(trend) {
   if (trend === "IMPROVING") return "📉";
