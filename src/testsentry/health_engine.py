@@ -115,7 +115,7 @@ def calculate_health_score(run_id: str) -> dict:
         FROM test_runs
         WHERE run_id = ?
         AND phase = 'call'
-        AND label = 'NEWLY_FAILING'
+        AND (label = 'NEWLY_FAILING' OR (label = 'NEW_TEST' AND status = 'FAILED'))
     """, [run_id]).fetchone()
 
     try:

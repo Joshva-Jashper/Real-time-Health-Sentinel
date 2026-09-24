@@ -14,9 +14,10 @@ def label_test(result: dict, run_id: str) -> str:
     """, [test_name, run_id]).fetchall()
     previous = [row[0] for row in history]
     if not previous:
-        # A first-seen passing test is new; a first-seen failure is actionable
-        # immediately and should appear in the newly-failing dashboard count.
-        return "NEWLY_FAILING" if current_status == "FAILED" else "NEW_TEST"
+        # First observation is always a new test. The summary separately counts
+        # failed NEW_TEST rows as newly failing, so the two dashboard counters
+        # can correctly overlap.
+        return "NEW_TEST"
     prev = previous[0]
     if prev == "PASSED" and current_status == "FAILED":
         return "REOPENED" if len(previous) > 1 and previous[1] == "FAILED" else "NEWLY_FAILING"
@@ -30,13 +31,15 @@ def label_test(result: dict, run_id: str) -> str:
 def get_regression_summary(run_id: str) -> dict:
     conn = get_connection()
     rows = conn.execute("""
-        SELECT label, COUNT(*) FROM test_runs
-        WHERE run_id = ? AND phase = 'call' GROUP BY label
+        SELECT label, status, COUNT(*) FROM test_runs
+        WHERE run_id = ? AND phase = 'call' GROUP BY label, status
     """, [run_id]).fetchall()
     summary = {label: 0 for label in (
         "NEWLY_FAILING", "FIXED", "REOPENED", "STILL_FAILING", "STABLE", "NEW_TEST"
     )}
-    for label, count in rows:
+    for label, status, count in rows:
         if label in summary:
             summary[label] = count
+        if label == "NEW_TEST" and status == "FAILED":
+            summary["NEWLY_FAILING"] += count
     return summary
