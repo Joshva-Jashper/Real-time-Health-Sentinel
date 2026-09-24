@@ -8,10 +8,37 @@ from testsentry.health_engine import calculate_health_score
 from testsentry.regression_detector import label_test
 from testsentry.report_generator import generate_report
 from testsentry.email_notifier import send_email_notification
+from testsentry.evidence import capture_playwright, capture_selenium, create_bundle
+import os
 
 
 RUN_ID = str(uuid.uuid4())[:8]
 START_TIME = datetime.now()
+
+
+def _capture_browser_evidence(item, result):
+    """Capture browser DOM evidence from common pytest fixture names/types."""
+    fixtures = getattr(item, "funcargs", {}) or {}
+    root_dir = os.getenv("TESTSENTRY_EVIDENCE_DIR", "evidence")
+    for fixture_name, browser in fixtures.items():
+        if browser is None:
+            continue
+        is_selenium = hasattr(browser, "page_source") and hasattr(browser, "execute_script")
+        is_playwright = hasattr(browser, "content") and hasattr(browser, "locator")
+        if not (is_selenium or is_playwright):
+            continue
+        try:
+            bundle = create_bundle(root_dir, result["test_name"], metadata={"fixture": fixture_name})
+            if is_selenium:
+                capture_selenium(bundle, browser, locator=fixture_name)
+            else:
+                capture_playwright(bundle, browser, locator=fixture_name)
+            result["evidence_dir"] = str(bundle.path)
+            print(f"[TestSentry] Browser evidence captured: {bundle.path}")
+            return
+        except Exception as exc:
+            print(f"[TestSentry] Browser evidence capture skipped: {type(exc).__name__}")
+            return
 
 
 def pytest_configure(config):
@@ -136,6 +163,7 @@ def pytest_runtest_makereport(item, call):
 
         if result["status"] == "FAILED":
             try:
+                _capture_browser_evidence(item, result)
                 triage_failure(result)
             except Exception as e:
                 print(f"\n[TestSentry] ⚠️ Triage error (skipping): {type(e).__name__}")

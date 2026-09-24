@@ -223,3 +223,37 @@ def test_plugin_session_finish_and_report_hook(monkeypatch):
     hook = plugin.pytest_runtest_makereport(SimpleNamespace(nodeid="test_x"), SimpleNamespace())
     next(hook)
     with pytest.raises(StopIteration): hook.send(Outcome())
+
+
+def test_failed_playwright_fixture_attaches_dom_evidence(monkeypatch, tmp_path):
+    class Locator:
+        def evaluate_all(self, script):
+            return [{"tag": "BUTTON", "text": "Login", "testid": "login"}]
+
+    class Page:
+        def url(self): return "https://example.test/login"
+        def title(self): return "Login"
+        def content(self): return "<button data-testid='login'>Login</button>"
+        def locator(self, selector): return Locator()
+        def screenshot(self, path, full_page=True): Path(path).write_bytes(b"png")
+
+    captured = {}
+    monkeypatch.setenv("TESTSENTRY_EVIDENCE_DIR", str(tmp_path / "evidence"))
+    monkeypatch.setattr(plugin, "label_test", lambda result, run_id: "NEW_TEST")
+    monkeypatch.setattr(plugin, "store_result", lambda *args, **kwargs: None)
+    monkeypatch.setattr(plugin, "triage_failure", lambda result: captured.update(result))
+
+    class Report:
+        when = "call"; skipped = False; failed = True; duration = 0.1; longrepr = "locator timeout"
+    class Outcome:
+        def get_result(self): return Report()
+
+    item = SimpleNamespace(nodeid="tests/test_login.py::test_login", funcargs={"page": Page()})
+    hook = plugin.pytest_runtest_makereport(item, SimpleNamespace())
+    next(hook)
+    with pytest.raises(StopIteration): hook.send(Outcome())
+
+    evidence_dir = Path(captured["evidence_dir"])
+    assert (evidence_dir / "page.html").exists()
+    assert (evidence_dir / "elements.json").exists()
+    assert (evidence_dir / "screenshot.png").exists()
