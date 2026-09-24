@@ -67,28 +67,9 @@ def calculate_health_score(run_id: str) -> dict:
     else:
         stability_score = 0
 
-    # Tests that have flipped status in last 5 runs:
-
-    flaky_row = conn.execute("""
-        WITH bounded AS (
-            SELECT test_name, status, timestamp,
-                   ROW_NUMBER() OVER (PARTITION BY test_name ORDER BY timestamp DESC, rowid DESC) AS rn
-            FROM test_runs
-            WHERE timestamp <= (SELECT MAX(timestamp) FROM test_runs WHERE run_id = ?)
-              AND phase = 'call'
-        ), recent AS (
-            SELECT test_name, status,
-                   LAG(status) OVER (PARTITION BY test_name ORDER BY timestamp, rn) AS previous_status
-            FROM bounded WHERE rn <= 5
-        )
-        SELECT COUNT(DISTINCT test_name) FROM recent
-        WHERE previous_status IS NOT NULL AND previous_status <> status
-    """, [run_id]).fetchone()
-
-    try:
-        flaky_count = int(flaky_row[0]) if (flaky_row and flaky_row[0] is not None) else 0
-    except (ValueError, TypeError):
-        flaky_count = 0
+    # Use the same strict classifier as the flaky leaderboard: repeated
+    # alternation plus environmental/transient failure evidence.
+    flaky_count = len(get_all_flaky_tests(run_id))
 
     if flaky_count == 0:
         flakiness_score = 20

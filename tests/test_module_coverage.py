@@ -118,6 +118,44 @@ def test_repeated_pass_fail_alternation_is_flaky():
     assert metrics["is_flaky"] is True
 
 
+def test_fail_then_pass_once_is_not_flaky():
+    name = "tests/test_flaky.py::test_one_transition"
+    _insert_history(name, ["FAILED", "PASSED"])
+
+    metrics = flaky.calculate_flakiness_per_test(name)
+
+    assert metrics["status_changes"] == 1
+    assert metrics["is_flaky"] is False
+
+
+def test_assertion_alternation_is_not_environmental_flakiness():
+    name = "tests/test_flaky.py::test_assertion_regression"
+    conn = collector.get_connection()
+    for index, status in enumerate(["PASSED", "FAILED", "PASSED", "FAILED"]):
+        conn.execute(
+            "INSERT INTO test_runs (run_id,test_name,status,duration,error_msg,label,phase,timestamp) VALUES (?,?,?,?,?,?,?,?)",
+            [f"assertion-{index}", name, status, 0.1,
+             "AssertionError: expected 2, got 3" if status == "FAILED" else None,
+             "STABLE", "call", datetime(2026, 3, 1, 9) + timedelta(days=index)],
+        )
+
+    metrics = flaky.calculate_flakiness_per_test(name)
+
+    assert metrics["status_changes"] == 3
+    assert metrics["environmental_issue"] is False
+    assert metrics["is_flaky"] is False
+
+
+def test_environmental_alternation_is_flaky():
+    name = "tests/test_flaky.py::test_network_alternation"
+    _insert_history(name, ["PASSED", "FAILED", "PASSED", "FAILED"])
+
+    metrics = flaky.calculate_flakiness_per_test(name)
+
+    assert metrics["environmental_issue"] is True
+    assert metrics["is_flaky"] is True
+
+
 def test_email_send_success_and_failure(monkeypatch):
     class SMTP:
         def __init__(self, *args): self.sent = False

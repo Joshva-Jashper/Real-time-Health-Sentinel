@@ -3,6 +3,27 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 
 
+_ENVIRONMENTAL_ERROR_MARKERS = (
+    "timeout", "timed out", "time out", "connection", "network", "socket",
+    "dns", "refused", "unreachable", "reset by peer", "temporarily unavailable",
+    "service unavailable", "rate limit", "429", "502", "503", "504",
+    "target closed", "browser closed", "page closed", "context closed",
+    "stale element", "detached from the dom", "element is not attached",
+    "webdriver", "chromium", "firefox", "deadlock", "race condition",
+    "resource busy", "out of memory", "oom", "segmentation fault",
+)
+
+
+def _is_environmental_error(error_msg: str | None) -> bool:
+    """Return True only for failures plausibly caused by transient conditions."""
+    if not error_msg:
+        return False
+    text = str(error_msg).lower()
+    if "assertionerror" in text or "assert " in text:
+        return False
+    return any(marker in text for marker in _ENVIRONMENTAL_ERROR_MARKERS)
+
+
 def _same_context(test_name: str) -> tuple[str | None, str | None]:
     """Return the latest code/environment identity recorded for this test."""
     conn = get_connection()
@@ -43,7 +64,7 @@ def calculate_flakiness_per_test(test_name: str, window: int = 30, run_id: str =
         cutoff_row = conn.execute("SELECT MAX(timestamp) FROM test_runs WHERE run_id = ?", [run_id]).fetchone()
         cutoff = cutoff_row[0] if cutoff_row else None
     query = """
-        SELECT status, timestamp FROM test_runs
+        SELECT status, timestamp, error_msg FROM test_runs
         WHERE test_name = CAST(? AS VARCHAR) AND phase = 'call'
           AND code_revision IS NOT DISTINCT FROM ?
           AND environment_signature IS NOT DISTINCT FROM ?
@@ -72,6 +93,7 @@ def calculate_flakiness_per_test(test_name: str, window: int = 30, run_id: str =
         }
     
     statuses = [row[0] for row in rows]
+    failed_errors = [row[2] for row in rows if row[0] == 'FAILED']
     total_runs = len(statuses)
     passed = sum(1 for s in statuses if s == 'PASSED')
     failed = sum(1 for s in statuses if s == 'FAILED')
@@ -98,7 +120,13 @@ def calculate_flakiness_per_test(test_name: str, window: int = 30, run_id: str =
     else:
         flakiness_rating = 'CRITICAL'
 
-    is_flaky = total_runs >= 3 and 0 < failure_rate < 100 and status_changes >= 2
+    environmental_failures = sum(1 for error in failed_errors if _is_environmental_error(error))
+    is_flaky = (
+        total_runs >= 3
+        and 0 < failure_rate < 100
+        and status_changes >= 2
+        and environmental_failures > 0
+    )
 
     
     trend = 'STABLE'
@@ -123,6 +151,8 @@ def calculate_flakiness_per_test(test_name: str, window: int = 30, run_id: str =
         'status_change_rate': status_change_rate,
         'flakiness_rating': flakiness_rating,
         'status_changes': status_changes,
+        'environmental_failures': environmental_failures,
+        'environmental_issue': environmental_failures > 0,
         'is_flaky': is_flaky,
         'trend': trend
     }
