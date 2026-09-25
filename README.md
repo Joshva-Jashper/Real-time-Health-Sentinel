@@ -6,11 +6,10 @@
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?style=flat-square&logo=python)
 ![pytest](https://img.shields.io/badge/pytest-plugin-green?style=flat-square&logo=pytest)
 ![DuckDB](https://img.shields.io/badge/DuckDB-analytical%20DB-yellow?style=flat-square)
-![Groq](https://img.shields.io/badge/Groq-LLM%20triage-purple?style=flat-square)
+![AI](https://img.shields.io/badge/AI-OpenAI%20%7C%20Ollama-purple?style=flat-square)
 ![Langfuse](https://img.shields.io/badge/Langfuse-observability-orange?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-51%20passing-brightgreen?style=flat-square)
-![Coverage](https://img.shields.io/badge/coverage-48%25-yellow?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-79%20passing-brightgreen?style=flat-square)
 
 ---
 
@@ -32,7 +31,7 @@ Developers waste **2–3 hours** every morning just understanding what went wron
 A custom pytest plugin fires the moment each test finishes and saves results to DuckDB permanently — not just today, but across every CI run forever.
 
 **2. Explains why it failed and how to fix it**
-When a test fails, a fine-tuned AI model (Llama 3.2 3B, trained on 3000 pytest + Playwright + Selenium failure examples) categorizes the failure and suggests the exact fix:
+When a test fails, the configured OpenAI-compatible backend (OpenAI or local Ollama) categorizes the failure and suggests a safe next step:
 
 ```
 ❌ test_checkout — FAILED
@@ -100,13 +99,13 @@ INPUT LAYER              PROCESSING LAYER           OUTPUT LAYER
 pytest plugin       →    Fingerprinter             →    HTML Health Report
   (live hook)              (SHA-256 hash)                (score + charts)
 
-Git log + authors   →    Triage Cache (DuckDB)     →    GitHub PR Comment
-                           (skip known failures)         (NEWLY_FAILING etc)
+Git log + authors   →    Triage Cache (DuckDB)     →    Dashboard + HTML Report
+                           (skip known failures)         (dashboard + report)
 
-coverage.py XML     →    AI Triage (Fine-tuned     →    Langfuse Dashboard
-                           Llama 3.2 3B via Ollama)      (cost + latency)
+coverage.py XML     →    AI Triage (OpenAI or       →    Langfuse Dashboard
+                           local Ollama)                 (cost + latency)
 
-CI run logs         →    Regression Detector       →    CLI Commands
+  CI run logs         →    Regression Detector       →    CLI + Dashboard
   (GitHub Actions)         (NEW/FIXED/STABLE)            (scan/status/risk)
 ```
 
@@ -120,7 +119,7 @@ TestSentry gives your test suite a score out of 100 across 5 dimensions:
 |---|---|---|
 | Speed | Average test duration | 20 |
 | Stability | Pass rate this run | 20 |
-| Flakiness | Tests flipping pass/fail | 20 |
+| Flakiness | Repeated pass/fail alternation with environmental evidence | 20 |
 | Coverage | Line coverage % | 20 |
 | Quality | Newly failing tests | 20 |
 
@@ -133,6 +132,7 @@ testsentry scan       # Generate HTML health report
 testsentry status     # Show recent test results
 testsentry history    # Health score across runs
 testsentry flaky      # Flaky test leaderboard
+testsentry dashboard   # Run the local dashboard on port 8088
 testsentry risk       # Who needs to act table
 testsentry coverage   # Code coverage per module
 testsentry clear      # Reset database
@@ -141,14 +141,17 @@ testsentry version    # Show version
 
 ---
 
-## 🤖 AI Triage — 4 Failure Categories
+## 🤖 AI Triage — Structured Failure Analysis
 
 | Category | Meaning | Example |
 |---|---|---|
 | `REAL_BUG` | Actual code defect | `assert result == 4` but returns 3 |
-| `FLAKY` | Non-deterministic failure | Network timeout, passes on retry |
+| `FLAKY` | Non-deterministic failure | Repeated environmental timeout and recovery |
 | `ENV_ISSUE` | Environment problem | Database not running in CI |
 | `DATA_ISSUE` | Test data missing | Expected row not in DB |
+
+The analyzer also supports more specific categories for locator, timing, API
+contract, test-code, application, authentication, and unknown failures.
 
 ### Fingerprint Cache
 
@@ -164,18 +167,13 @@ In testing: **70% reduction in API calls**, per-run AI cost from $0.020 → $0.0
 
 ---
 
-## 🔬 Fine-Tuned Model
+## 🔬 AI Backends
 
-TestSentry uses a **fine-tuned Llama 3.2 3B Instruct** model trained on 3000 labeled failure examples across 29 categories:
-
-```
-pytest failures    (11 categories) — AssertionError, TypeError, etc.
-Playwright errors  (7 categories)  — Selector, Navigation, Timeout, etc.
-Selenium errors    (7 categories)  — StaleElement, NoSuchElement, etc.
-E2E / Backend      (4 categories)  — Auth, Database, Network, etc.
-```
-
-Fine-tuned using **LoRA** on Google Colab free T4 GPU. Runs locally via Ollama — **zero API cost, fully offline**.
+TestSentry supports two OpenAI-compatible triage backends. The hosted backend
+uses the configured OpenAI API and the local backend uses Ollama, so users can
+run triage without OpenAI billing or an API key when Ollama is selected. The
+structured analyzer covers pytest, Playwright, Selenium, API, application,
+authentication, data, environment, timing, locator, and unknown failures.
 
 ---
 
@@ -197,8 +195,8 @@ Fine-tunes LLMs for flaky test classification. TestSentry extends this with stru
 |---|---|
 | DuckDB | Serverless analytical DB — stores all test history |
 | Instructor + Pydantic | Guaranteed structured AI output |
-| Groq API | LLM backend during development |
-| Llama 3.2 3B (fine-tuned) | Final AI model — runs locally |
+| OpenAI-compatible API | Hosted GPT triage backend |
+| Ollama | Optional free local triage backend |
 | Langfuse | LLMOps — tracks tokens, cost, cache hits |
 | gitpython | Git history reader for ownership mapping |
 | coverage.py | Line coverage measurement |
@@ -221,7 +219,20 @@ STABLE         — passing consistently
 NEW_TEST       — first time seen
 ```
 
-GitHub PR comment shows: `2 NEWLY FAILING | 1 FIXED | 0 REOPENED | 47 STABLE`
+On a first run, a failed test is both **new** and **newly failing**. The
+dashboard therefore intentionally allows these counters to overlap: if 11
+tests run for the first time and 8 fail, it shows `New Tests: 11` and
+`Newly Failing: 8`. In the Test Results table, those failed rows display both
+badges.
+
+TestSentry does not classify every repeated failure as flaky. A flaky result
+requires both repeated status alternation (at least two pass/fail transitions)
+and environmental or transient evidence such as a timeout, network failure,
+browser closure, stale element, rate limit, or resource failure. A plain
+`AssertionError`, even when it alternates between pass and fail, remains a
+test or application regression rather than an environmental flaky test.
+
+Dashboard and reports show: `NEWLY FAILING | FIXED | REOPENED | STILL FAILING | STABLE | NEW TEST`
 
 ---
 
@@ -243,7 +254,7 @@ testsentry/
 │   └── cli.py                 # Click CLI — 8 commands
 ├── templates/
 │   └── report.html            # Jinja2 report template
-├── tests/                     # 56 tests; coverage depends on the current run
+├── tests/                     # Automated regression and integration tests
 ├── scripts/
 │   └── generate_dataset.py    # 3000-example dataset generator
 ├── data/
@@ -260,7 +271,7 @@ testsentry/
 |---|---|---|---|---|
 | AI triage + fix suggestions | ✅ | ❌ | ❌ | ❌ |
 | Fingerprint cache | ✅ | ❌ | ❌ | ❌ |
-| Fine-tuned local model | ✅ | ❌ | ❌ | ❌ |
+| Optional local AI backend | ✅ | ❌ | ❌ | ❌ |
 | Ownership mapping | ✅ | ❌ | ❌ | ✅ |
 | Regression labels | ✅ | ❌ | ✅ | ✅ |
 | Cost tracking | ✅ | ❌ | ❌ | ✅ |
@@ -283,7 +294,7 @@ MIT License — free to use, modify, and distribute.
 
 ---
 
-*TestSentry v2.1 — 7 modules · 56 tests · Tiered GPT analysis · GitHub Actions
+*TestSentry v2.1 — pytest monitoring · OpenAI/Ollama triage · DuckDB history · GitHub Actions
 
 ## Implementation status
 
@@ -300,7 +311,7 @@ MIT License — free to use, modify, and distribute.
 - API request-size limits, triage rate limiting, API-key enforcement when configured, CORS support for `X-API-Key`, and sanitized local audit events.
 - CI coverage generation, Python 3.11/3.12 matrix testing, browser dependencies, and failure-preserving report generation.
 
-### Planned next phases
+### Safety boundaries and roadmap
 
 The browser-repair roadmap remains intentionally conservative. Candidate validation is implemented locally, but branch creation, pushing, and pull-request creation are not automated. A human must review an accepted candidate before committing or opening a PR. Automatic changes to application logic are not planned; real application bugs must remain failed CI results.
 
@@ -337,3 +348,28 @@ The adapters are evidence collectors only. They do not change locators, applicat
 The AI analyzer now uses the OpenAI-compatible GPT-5 catalog. GPT-5 mini handles normal failure triage with strict JSON-schema output. Results with confidence below 80 percent or the `REAL_BUG` category are reviewed by GPT-5 with the preliminary result and sanitized evidence as context. If escalation fails, the validated GPT-5 mini result is retained; if no `OPENAI_API_KEY` is configured, triage is skipped without breaking test execution.
 
 The analyzer includes sanitized DOM, browser metadata, API evidence, locator information, and failure text when available. It never treats a `REAL_BUG` classification as an automatic repair candidate. Cached fingerprints avoid repeating analysis for identical failures.
+
+### Current local operation
+
+The dashboard reads `testsentry.db` from the directory in which it is started.
+Run pytest and the dashboard from the same project directory so both processes
+use the same history database:
+
+```bash
+cd ~/testsentry-demo
+pytest tests/ -v
+testsentry dashboard
+```
+
+Open `http://127.0.0.1:8088`. The dashboard provides Overview, Test Results,
+Flakiness Analysis, Risk & Ownership, AI Triage, and History views. Test
+Results count only pytest call-phase rows, excluding setup and teardown rows.
+If multiple `testsentry.db` files exist, inspect or remove only the database
+belonging to the project you are running; databases in other directories are
+separate histories.
+
+The local Ollama backend is optional. If Ollama is stopped, the model is
+missing, or a triage request fails, the pytest run, result persistence,
+regression labels, and dashboard still work; only that AI analysis is marked
+unavailable. The `favicon.ico` 404 sometimes printed by the dashboard server
+is harmless and does not affect test collection or metrics.
