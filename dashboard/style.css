@@ -796,3 +796,28 @@ body::before { opacity: .18; background: repeating-linear-gradient(0deg, transpa
   .overview-hero { grid-template-columns: 1fr; padding: 20px; }
   .hero-dims-col { grid-column: auto; }
 }
+
+
+/* ── SIDEBAR-TO-CONTENT GAP FIX ── */
+body {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  align-items: stretch;
+}
+.sidebar {
+  grid-column: 1;
+  width: var(--sidebar-w);
+}
+.main {
+  grid-column: 2;
+  width: 100%;
+  min-width: 0;
+  margin-left: 0;
+}
+.topbar, .tab-content { width: 100%; }
+.tab-content { padding-left: 24px; }
+@media (max-width: 720px) {
+  body { display: block; }
+  .sidebar { width: 100%; }
+  .main { width: 100%; margin-left: 0; }
+}
