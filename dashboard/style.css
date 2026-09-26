@@ -692,3 +692,65 @@ body::before { opacity: .18; background: repeating-linear-gradient(0deg, transpa
 @media (prefers-reduced-motion: reduce) {
   .signal-pulse, .pipeline-line::after, .pipeline-step.current i { animation: none !important; }
 }
+
+
+/* ── ALIGNMENT & INTERACTION ERGONOMICS ── */
+.main {
+  width: calc(100% - var(--sidebar-w));
+  min-width: 0;
+}
+.topbar {
+  padding: 18px clamp(22px, 3.2vw, 56px);
+}
+.tab-content {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 30px clamp(22px, 3.2vw, 56px) 52px;
+}
+.overview-hero {
+  grid-template-columns: 220px minmax(260px, .85fr) minmax(340px, 1fr);
+  gap: 32px;
+  padding: 30px 34px;
+}
+.hero-stats-col { padding: 0 28px; }
+.hero-dims-col { padding-right: 8px; }
+.card, .stat-card { border-radius: 14px; }
+.card { padding: 26px; }
+.card-title-row { margin-bottom: 22px; }
+
+/* Larger, calmer click targets. */
+.nav-item { min-height: 46px; }
+.icon-btn { width: 42px; height: 42px; }
+.toggle-track { width: 40px; height: 22px; }
+.toggle-thumb { width: 16px; height: 16px; top: 2px; left: 3px; }
+.toggle-wrap input:checked + .toggle-track .toggle-thumb { left: 19px; }
+.run-selector-wrap { min-height: 42px; }
+#run-selector { min-height: 40px; }
+.search-input, .select-sm { min-height: 44px; }
+.btn-primary { min-height: 38px; padding: 8px 15px; border-radius: 7px; }
+.data-table th { padding: 15px 17px; }
+.data-table td { padding: 16px 17px; }
+
+@media (max-width: 1250px) {
+  .overview-hero { grid-template-columns: 190px minmax(230px, .8fr) minmax(280px, 1fr); gap: 22px; padding: 26px; }
+  .hero-stats-col { padding: 0 20px; }
+  .tab-content { padding-left: 24px; padding-right: 24px; }
+  .topbar { padding-left: 24px; padding-right: 24px; }
+}
+@media (max-width: 980px) {
+  .main { width: calc(100% - var(--sidebar-w)); }
+  .overview-hero { grid-template-columns: auto 1fr; }
+  .hero-dims-col { grid-column: 1 / -1; padding-right: 0; }
+}
+@media (max-width: 720px) {
+  .main { width: 100%; }
+  .topbar { padding: 14px 16px; }
+  .tab-content { padding: 18px 14px 34px; }
+  .overview-hero { padding: 20px; gap: 18px; }
+  .card { padding: 19px; }
+  .quality-strip { padding: 12px; }
+  .pipeline-track { overflow-x: auto; padding-bottom: 2px; }
+  .pipeline-step { flex: 0 0 auto; }
+  .table-wrap { margin-left: -2px; margin-right: -2px; }
+}
