@@ -434,5 +434,6 @@ This project is released under the [MIT License](LICENSE).
 ## Author
 
 **Joshva-Jashper**
+**Mantraa**
 
 Repository: [github.com/Joshva-Jashper/Real-time-Health-Sentinel](https://github.com/Joshva-Jashper/Real-time-Health-Sentinel)
