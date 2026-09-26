@@ -1,359 +1,124 @@
-# 🛡️ TestSentry v2.1
-### Intelligent Test Suite Health Monitor
+# TestSentry
 
-> *Turn "47 tests failed, good luck" into "here's exactly what broke, why, who needs to fix it, and what it cost to find out."*
+### Intelligent Test Suite Health Monitoring for Pytest, Playwright, and Selenium
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue?style=flat-square&logo=python)
-![pytest](https://img.shields.io/badge/pytest-plugin-green?style=flat-square&logo=pytest)
-![DuckDB](https://img.shields.io/badge/DuckDB-analytical%20DB-yellow?style=flat-square)
-![AI](https://img.shields.io/badge/AI-OpenAI%20%7C%20Ollama-purple?style=flat-square)
-![Langfuse](https://img.shields.io/badge/Langfuse-observability-orange?style=flat-square)
-![License](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-79%20passing-brightgreen?style=flat-square)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![Pytest](https://img.shields.io/badge/Pytest-plugin-0A9EDC?style=flat-square&logo=pytest&logoColor=white)](https://pytest.org/)
+[![DuckDB](https://img.shields.io/badge/DuckDB-history%20store-FFF000?style=flat-square&logo=duckdb&logoColor=black)](https://duckdb.org/)
+[![AI](https://img.shields.io/badge/AI-OpenAI%20%7C%20Ollama-6E40C9?style=flat-square)](https://ollama.com/)
+[![License](https://img.shields.io/badge/license-MIT-6B7280?style=flat-square)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-79%20passing-16A34A?style=flat-square)](tests/)
 
----
-
-## 📌 The Problem
-
-In any software company, developers run hundreds of automated tests every day. When tests fail, nobody knows:
-
-- **Why** it failed — real bug, flaky test, or environment issue?
-- **Whether** it just broke today or has been broken for weeks
-- **Who** is responsible for fixing it
-
-Developers waste **2–3 hours** every morning just understanding what went wrong. TestSentry cuts that down to **10 seconds**.
+> TestSentry turns a failing test run into an actionable engineering report: what failed, whether it is a regression or a genuine flaky test, what evidence was captured, and what should be investigated next.
 
 ---
 
-## ✨ What TestSentry Does
+## Overview
 
-**1. Monitors every test in real-time**
-A custom pytest plugin fires the moment each test finishes and saves results to DuckDB permanently — not just today, but across every CI run forever.
+TestSentry is a local-first test observability and failure-analysis platform. It installs as a pytest plugin, records test history in DuckDB, compares results across runs, captures browser evidence when available, and presents the results through a CLI, HTML reports, and a FastAPI dashboard.
 
-**2. Explains why it failed and how to fix it**
-When a test fails, the configured OpenAI-compatible backend (OpenAI or local Ollama) categorizes the failure and suggests a safe next step:
+The project is designed to answer four practical questions:
 
+1. **What failed?** — test name, phase, duration, error, and evidence.
+2. **Is it new or recurring?** — regression labels and historical comparison.
+3. **Is it actually flaky?** — repeated status alternation plus transient/environmental evidence.
+4. **What should the team investigate?** — structured AI triage, ownership, risk, and safe repair validation.
+
+## Key capabilities
+
+- Automatic pytest result collection through a plugin.
+- Persistent run history in a local DuckDB database.
+- Regression labels: `NEW_TEST`, `NEWLY_FAILING`, `FIXED`, `REOPENED`, `STILL_FAILING`, and `STABLE`.
+- Strict flakiness detection based on repeated pass/fail transitions and environmental evidence.
+- OpenAI GPT triage or local Ollama triage with structured JSON output.
+- Fingerprint-based triage caching for repeated failures.
+- Playwright and Selenium evidence capture, including DOM/page HTML and screenshots.
+- Sanitization of passwords, tokens, cookies, authorization values, API keys, and sensitive URL parameters.
+- Health scoring across speed, stability, flakiness, coverage, and quality.
+- Interactive dashboard and generated HTML reports.
+- Risk and ownership analysis based on repository history.
+- Isolated, test-only candidate repair validation with safety gates.
+- GitHub Actions CI with coverage and browser support.
+
+---
+
+## Architecture
+
+```text
+                         ┌──────────────────────────┐
+                         │       Test execution     │
+                         │  Pytest / Playwright /   │
+                         │        Selenium          │
+                         └────────────┬─────────────┘
+                                      │
+                                      ▼
+                         ┌──────────────────────────┐
+                         │      Pytest plugin        │
+                         │ Result + phase capture   │
+                         └────────────┬─────────────┘
+                                      │
+                 ┌────────────────────┼────────────────────┐
+                 ▼                    ▼                    ▼
+       ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
+       │ DuckDB history  │  │ Evidence bundles│  │ Error fingerprints│
+       │ runs + results  │  │ DOM + screenshots│  │ SHA-256 cache    │
+       └────────┬────────┘  └────────┬────────┘  └────────┬────────┘
+                └───────────────────┼───────────────────┘
+                                    ▼
+                         ┌──────────────────────────┐
+                         │ Regression + flakiness   │
+                         │ Health score + AI triage │
+                         └────────────┬─────────────┘
+                                      │
+                    ┌─────────────────┼─────────────────┐
+                    ▼                 ▼                 ▼
+             HTML report        FastAPI dashboard     CLI / CI
 ```
-❌ test_checkout — FAILED
-
-Category:    ENV_ISSUE (92% confidence)
-Why:         Database connection pool exhausted —
-             too many parallel CI jobs hitting the same DB
-Fix:         Add db.close() in test teardown or set
-             pool_size=20 in your database config
-```
-
-**3. Tells you who needs to act**
-Git history is analyzed to find who last changed each file. Coverage gaps are mapped to responsible developers — the report says exactly who needs to add tests.
 
 ---
 
-## 🚀 Quick Start
+## Installation
+
+### From the repository
 
 ```bash
-# Install
-pip install testsentry
+git clone https://github.com/Joshva-Jashper/Real-time-Health-Sentinel.git
+cd Real-time-Health-Sentinel
+python -m venv .venv
 
-# Run your tests — TestSentry activates automatically
-pytest tests/
+# Linux/macOS
+source .venv/bin/activate
 
-# Generate health report
-testsentry scan
-
-# View results
-open report.html
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+pip install -e .
 ```
 
-### Free local AI triage with Ollama
-
-OpenAI is the default hosted backend, but AI triage can run locally without an
-OpenAI API key. Install [Ollama](https://ollama.com/download), start it, and
-download a coding-capable model:
+TestSentry requires Python 3.10 or newer. Playwright and Selenium are optional; install them only for the browser workflows used by your project.
 
 ```bash
-ollama pull qwen2.5-coder:7b
+pip install playwright selenium
+playwright install
 ```
 
-Create `.env` from `.env.example` or set:
-
-```env
-TRIAGE_BACKEND=ollama
-OLLAMA_MODEL=qwen2.5-coder:7b
-OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
-```
-
-TestSentry uses Ollama's OpenAI-compatible local endpoint. No `OPENAI_API_KEY`,
-OpenAI billing, GPU, or Python Ollama package is required. CPU-only execution
-works, though a GPU can make responses faster. If Ollama is not running or the
-model is missing, the test run still completes and AI triage is reported as
-unavailable; monitoring, persistence, regression labels, and reports remain
-available.
-
----
-
-## 🏗️ Architecture
-
-```
-INPUT LAYER              PROCESSING LAYER           OUTPUT LAYER
-─────────────────────    ──────────────────────     ──────────────────────
-pytest plugin       →    Fingerprinter             →    HTML Health Report
-  (live hook)              (SHA-256 hash)                (score + charts)
-
-Git log + authors   →    Triage Cache (DuckDB)     →    Dashboard + HTML Report
-                           (skip known failures)         (dashboard + report)
-
-coverage.py XML     →    AI Triage (OpenAI or       →    Langfuse Dashboard
-                           local Ollama)                 (cost + latency)
-
-  CI run logs         →    Regression Detector       →    CLI + Dashboard
-  (GitHub Actions)         (NEW/FIXED/STABLE)            (scan/status/risk)
-```
-
----
-
-## 📊 Health Score
-
-TestSentry gives your test suite a score out of 100 across 5 dimensions:
-
-| Dimension | What it measures | Max |
-|---|---|---|
-| Speed | Average test duration | 20 |
-| Stability | Pass rate this run | 20 |
-| Flakiness | Repeated pass/fail alternation with environmental evidence | 20 |
-| Coverage | Line coverage % | 20 |
-| Quality | Newly failing tests | 20 |
-
----
-
-## 🧰 CLI Commands
+### Verify the installation
 
 ```bash
-testsentry scan       # Generate HTML health report
-testsentry status     # Show recent test results
-testsentry history    # Health score across runs
-testsentry flaky      # Flaky test leaderboard
-testsentry dashboard   # Run the local dashboard on port 8088
-testsentry risk       # Who needs to act table
-testsentry coverage   # Code coverage per module
-testsentry clear      # Reset database
-testsentry version    # Show version
+testsentry version
+pytest --help | grep testsentry
 ```
 
 ---
 
-## 🤖 AI Triage — Structured Failure Analysis
+## Run a test suite
 
-| Category | Meaning | Example |
-|---|---|---|
-| `REAL_BUG` | Actual code defect | `assert result == 4` but returns 3 |
-| `FLAKY` | Non-deterministic failure | Repeated environmental timeout and recovery |
-| `ENV_ISSUE` | Environment problem | Database not running in CI |
-| `DATA_ISSUE` | Test data missing | Expected row not in DB |
+TestSentry activates automatically when the package is installed as a pytest plugin:
 
-The analyzer also supports more specific categories for locator, timing, API
-contract, test-code, application, authentication, and unknown failures.
-
-### Fingerprint Cache
-
-The same error is **never triaged twice**. Stack traces are normalized (line numbers, memory addresses, timestamps stripped) and SHA-256 hashed. Cache hits return in under 1ms at zero API cost.
-
-```
-Run 1  → test_checkout fails → AI called → $0.002
-Run 2  → same error         → cache hit  → $0.000
-Run 20 → same error         → cache hit  → $0.000
+```bash
+pytest tests/ -v
 ```
 
-In testing: **70% reduction in API calls**, per-run AI cost from $0.020 → $0.006.
-
----
-
-## 🔬 AI Backends
-
-TestSentry supports two OpenAI-compatible triage backends. The hosted backend
-uses the configured OpenAI API and the local backend uses Ollama, so users can
-run triage without OpenAI billing or an API key when Ollama is selected. The
-structured analyzer covers pytest, Playwright, Selenium, API, application,
-authentication, data, environment, timing, locator, and unknown failures.
-
----
-
-## 📚 Research Foundation
-
-This project is grounded in two recent papers from top venues:
-
-**[1] FlakyFix** — Fatima et al., *IEEE Transactions on Software Engineering*, 2024
-Uses LLMs for predicting fix categories for flaky tests. TestSentry extends this to all 4 failure types with live CI/CD deployment.
-
-**[2] More & Bradbury** — *ICST 2025* (IEEE International Conference on Software Testing)
-Fine-tunes LLMs for flaky test classification. TestSentry extends this with structured output, fix suggestions, and a fingerprint cache.
-
----
-
-## ⚙️ Tech Stack
-
-| Library | Purpose |
-|---|---|
-| DuckDB | Serverless analytical DB — stores all test history |
-| Instructor + Pydantic | Guaranteed structured AI output |
-| OpenAI-compatible API | Hosted GPT triage backend |
-| Ollama | Optional free local triage backend |
-| Langfuse | LLMOps — tracks tokens, cost, cache hits |
-| gitpython | Git history reader for ownership mapping |
-| coverage.py | Line coverage measurement |
-| Jinja2 + matplotlib | HTML report generation |
-| Click | CLI framework |
-| GitHub Actions | CI/CD automation |
-
----
-
-## 🔄 Regression Labels
-
-Every test gets labeled on every run:
-
-```
-NEWLY_FAILING  — was passing, now failing  ← developer must act NOW
-FIXED          — was failing, now passing  ← celebrate
-REOPENED       — was fixed, failed again   ← investigate
-STILL_FAILING  — ongoing issue
-STABLE         — passing consistently
-NEW_TEST       — first time seen
-```
-
-On a first run, a failed test is both **new** and **newly failing**. The
-dashboard therefore intentionally allows these counters to overlap: if 11
-tests run for the first time and 8 fail, it shows `New Tests: 11` and
-`Newly Failing: 8`. In the Test Results table, those failed rows display both
-badges.
-
-TestSentry does not classify every repeated failure as flaky. A flaky result
-requires both repeated status alternation (at least two pass/fail transitions)
-and environmental or transient evidence such as a timeout, network failure,
-browser closure, stale element, rate limit, or resource failure. A plain
-`AssertionError`, even when it alternates between pass and fail, remains a
-test or application regression rather than an environmental flaky test.
-
-Dashboard and reports show: `NEWLY FAILING | FIXED | REOPENED | STILL FAILING | STABLE | NEW TEST`
-
----
-
-## 🗂️ Project Structure
-
-```
-testsentry/
-├── src/testsentry/
-│   ├── plugin.py              # pytest hook — captures every test live
-│   ├── collector.py           # DuckDB storage layer
-│   ├── fingerprinter.py       # SHA-256 stack trace hashing
-│   ├── ai_triage.py           # AI failure categorization
-│   ├── regression_detector.py # NEW/FIXED/STABLE labeling
-│   ├── health_engine.py       # 5-dimension health score
-│   ├── ownership_mapper.py    # Git author + coverage gap mapping
-│   ├── flakiness_analyzer.py  # Detailed flakiness metrics
-│   ├── coverage_analyzer.py   # coverage.py integration
-│   ├── report_generator.py    # HTML report with Jinja2
-│   └── cli.py                 # Click CLI — 8 commands
-├── templates/
-│   └── report.html            # Jinja2 report template
-├── tests/                     # Automated regression and integration tests
-├── scripts/
-│   └── generate_dataset.py    # 3000-example dataset generator
-├── data/
-│   └── training_dataset.json  # Fine-tuning dataset
-└── .github/workflows/
-    └── testsentry.yml         # GitHub Actions CI/CD
-```
-
----
-
-## 🆚 Why Not BuildPulse or Allure?
-
-| Feature | TestSentry | BuildPulse | Allure | Datadog |
-|---|---|---|---|---|
-| AI triage + fix suggestions | ✅ | ❌ | ❌ | ❌ |
-| Fingerprint cache | ✅ | ❌ | ❌ | ❌ |
-| Optional local AI backend | ✅ | ❌ | ❌ | ❌ |
-| Ownership mapping | ✅ | ❌ | ❌ | ✅ |
-| Regression labels | ✅ | ❌ | ✅ | ✅ |
-| Cost tracking | ✅ | ❌ | ❌ | ✅ |
-| Free + local | ✅ | ❌ | Partial | ❌ |
-| Playwright support | ✅ | ✅ | ✅ | ✅ |
-
----
-
-## 👥 Done By
-
-| Member | Role |
-|---|---|
-| Joshva | Core system, AI triage, CLI, CI/CD, Dataset generation, fine-tuning, testing|
-
----
-
-## 📄 License
-
-MIT License — free to use, modify, and distribute.
-
----
-
-*TestSentry v2.1 — pytest monitoring · OpenAI/Ollama triage · DuckDB history · GitHub Actions
-
-## Implementation status
-
-### Working today
-
-- Pytest result collection with setup, call, and teardown phase tracking.
-- DuckDB persistence for test results, completed-run metadata, triage cache, and AI events.
-- Health scoring, regression labels, flakiness analysis, ownership analysis, HTML reports, CLI commands, and dashboard API.
-- Optional tiered GPT triage: GPT-5 mini for routine failures and GPT-5 escalation for uncertain or potentially real bugs, with fingerprint-based caching.
-- GitHub Actions execution and report artifact generation.
-- Specific triage categories for locator, timing, API contract, test-code, application, authentication, environment, flaky, data, and unknown failures.
-- Automatic-repair safety gates: only locator, timing, flaky, and test-code categories may enter candidate validation; application, API, authentication, environment, data, and unknown failures remain CI failures.
-- Isolated candidate patch validation through `testsentry validate-repair`; it applies a unified diff in a temporary copy, runs the failed test and related suite, and rejects non-test file changes.
-- API request-size limits, triage rate limiting, API-key enforcement when configured, CORS support for `X-API-Key`, and sanitized local audit events.
-- CI coverage generation, Python 3.11/3.12 matrix testing, browser dependencies, and failure-preserving report generation.
-
-### Safety boundaries and roadmap
-
-The browser-repair roadmap remains intentionally conservative. Candidate validation is implemented locally, but branch creation, pushing, and pull-request creation are not automated. A human must review an accepted candidate before committing or opening a PR. Automatic changes to application logic are not planned; real application bugs must remain failed CI results.
-
-### Phase 1 stabilization
-
-The repository test suite uses an isolated temporary DuckDB database so unit and regression tests do not add synthetic runs to a developer's dashboard database. The dashboard run selector and history use completed run metadata, while test-result views count only pytest call-phase records. The baseline repository suite is expected to pass before later browser and AI-repair phases are added.
-
-### Phase 2 evidence collection
-
-The optional `testsentry.evidence` module now captures sanitized failure bundles without requiring Selenium or Playwright to be installed by every project. A bundle can contain the failure text, browser metadata, DOM/page HTML, relevant interactive elements, screenshots, Playwright traces, and API request/response details. Passwords, tokens, cookies, authorization values, API keys, and sensitive URL query parameters are redacted before evidence is written.
-
-Synchronous Playwright usage:
-
-```python
-from testsentry.evidence import create_bundle, capture_playwright
-
-bundle = create_bundle("test-results", "tests/login.spec.py::valid_login")
-capture_playwright(bundle, page, locator="get_by_role('button', name='Log in')")
-```
-
-Selenium usage:
-
-```python
-from testsentry.evidence import create_bundle, capture_selenium
-
-bundle = create_bundle("test-results", "tests/test_login.py::test_valid_login")
-capture_selenium(bundle, driver, locator="button#login")
-```
-
-The adapters are evidence collectors only. They do not change locators, application code, or test expectations. Candidate repair validation is available separately and is restricted to test-only diffs in a temporary workspace.
-
-### Phase 3 GPT integration
-
-The AI analyzer now uses the OpenAI-compatible GPT-5 catalog. GPT-5 mini handles normal failure triage with strict JSON-schema output. Results with confidence below 80 percent or the `REAL_BUG` category are reviewed by GPT-5 with the preliminary result and sanitized evidence as context. If escalation fails, the validated GPT-5 mini result is retained; if no `OPENAI_API_KEY` is configured, triage is skipped without breaking test execution.
-
-The analyzer includes sanitized DOM, browser metadata, API evidence, locator information, and failure text when available. It never treats a `REAL_BUG` classification as an automatic repair candidate. Cached fingerprints avoid repeating analysis for identical failures.
-
-### Current local operation
-
-The dashboard reads `testsentry.db` from the directory in which it is started.
-Run pytest and the dashboard from the same project directory so both processes
-use the same history database:
+The run stores results in `testsentry.db` in the **current working directory**. Run pytest and the dashboard from the same project directory so they use the same database:
 
 ```bash
 cd ~/testsentry-demo
@@ -361,15 +126,313 @@ pytest tests/ -v
 testsentry dashboard
 ```
 
-Open `http://127.0.0.1:8088`. The dashboard provides Overview, Test Results,
-Flakiness Analysis, Risk & Ownership, AI Triage, and History views. Test
-Results count only pytest call-phase rows, excluding setup and teardown rows.
-If multiple `testsentry.db` files exist, inspect or remove only the database
-belonging to the project you are running; databases in other directories are
-separate histories.
+Open the dashboard at [http://127.0.0.1:8088](http://127.0.0.1:8088).
 
-The local Ollama backend is optional. If Ollama is stopped, the model is
-missing, or a triage request fails, the pytest run, result persistence,
-regression labels, and dashboard still work; only that AI analysis is marked
-unavailable. The `favicon.ico` 404 sometimes printed by the dashboard server
-is harmless and does not affect test collection or metrics.
+> If you have multiple `testsentry.db` files, each file belongs to the directory from which TestSentry was run. They are separate histories.
+
+---
+
+## AI triage backends
+
+TestSentry supports two backends. AI triage is optional: test execution, result persistence, regression labels, reports, and the dashboard continue working if the selected model is unavailable.
+
+### Option A: OpenAI GPT
+
+Create a `.env` file in the directory where you run TestSentry:
+
+```env
+TRIAGE_BACKEND=openai
+OPENAI_API_KEY=your_openai_api_key
+```
+
+The OpenAI-compatible client uses GPT-5 mini for routine triage and can escalate uncertain or potentially serious failures to GPT-5. Do not commit `.env` or expose your API key in source code.
+
+### Option B: Local Ollama
+
+Install [Ollama](https://ollama.com/download), start the Ollama service, and download a coding model:
+
+```bash
+ollama pull qwen2.5-coder:7b
+```
+
+Configure TestSentry:
+
+```env
+TRIAGE_BACKEND=ollama
+OLLAMA_MODEL=qwen2.5-coder:7b
+OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
+```
+
+No OpenAI API key, OpenAI billing, or Python Ollama package is required. CPU-only execution works, although a GPU can improve response time.
+
+---
+
+## Failure categories
+
+AI triage returns structured results with a category, confidence, explanation, suggested fix, and affected module.
+
+| Category | Meaning |
+|---|---|
+| `LOCATOR_FAILURE` | A selector or locator no longer identifies the intended UI element. |
+| `WAIT_OR_TIMING_FAILURE` | A synchronization, timeout, race, or ordering problem. |
+| `API_CONTRACT_FAILURE` | The service response, status, or schema violates the expected contract. |
+| `TEST_CODE_FAILURE` | The test, assertion, fixture, or setup is incorrect. |
+| `APPLICATION_BUG` | Application or service behavior is incorrect. |
+| `AUTHENTICATION_FAILURE` | Login, permission, credential, or security behavior failed. |
+| `ENVIRONMENT_FAILURE` | Browser, driver, network, CI, dependency, or infrastructure problem. |
+| `FLAKY` | Nondeterministic timing, ordering, race, or intermittent behavior. |
+| `DATA_ISSUE` | Invalid, missing, stale, or conflicting test data. |
+| `UNKNOWN` | The available evidence is insufficient. |
+
+Application, API, authentication, environment, data, and unknown failures are not automatic repair candidates. They remain visible CI failures for human investigation.
+
+---
+
+## Regression labels and first-run behavior
+
+Every call-phase test result receives a historical label:
+
+| Label | Meaning |
+|---|---|
+| `NEW_TEST` | The test is being observed for the first time. |
+| `NEWLY_FAILING` | A previously passing test is now failing. |
+| `FIXED` | A previously failing test is now passing. |
+| `REOPENED` | A previously fixed test has failed again. |
+| `STILL_FAILING` | The test continues to fail. |
+| `STABLE` | The test continues to pass. |
+
+First-run counters intentionally overlap. For example, if 11 tests are executed for the first time and 8 fail:
+
+```text
+New Tests:       11
+Newly Failing:    8
+```
+
+The eight failed rows are both new and newly failing. The Test Results table displays both badges for those rows.
+
+---
+
+## Flakiness rules
+
+A test is not classified as flaky merely because it failed once or because its result changed once.
+
+A test is classified as flaky only when all of the following are true:
+
+1. It has at least three real call-phase executions.
+2. It contains both passed and failed results.
+3. It has at least two pass/fail transitions, such as `PASS → FAIL → PASS`.
+4. At least one failure contains environmental or transient evidence.
+
+Examples of environmental evidence include timeouts, network failures, DNS errors, refused connections, browser/page closure, stale elements, detached DOM elements, WebDriver errors, rate limits, deadlocks, and resource failures.
+
+A plain `AssertionError` or deterministic application mismatch is treated as a regression, even if the test alternates between pass and fail.
+
+---
+
+## Evidence collection
+
+When browser objects are available, TestSentry can collect sanitized failure evidence for Playwright and Selenium tests:
+
+- Failure text and stack trace.
+- Browser URL and page title.
+- DOM/page HTML.
+- Relevant interactive elements.
+- Screenshots.
+- Locator information.
+- Browser and driver metadata.
+- Playwright trace information.
+- API request and response details when supplied.
+
+Example Playwright usage:
+
+```python
+from testsentry.evidence import capture_playwright, create_bundle
+
+bundle = create_bundle("test-results", "tests/test_login.py::test_valid_login")
+capture_playwright(
+    bundle,
+    page,
+    locator="get_by_role('button', name='Log in')",
+)
+```
+
+Example Selenium usage:
+
+```python
+from testsentry.evidence import capture_selenium, create_bundle
+
+bundle = create_bundle("test-results", "tests/test_login.py::test_valid_login")
+capture_selenium(bundle, driver, locator="button#login")
+```
+
+Evidence collection is failure-safe. If a browser adapter is unavailable or a capture operation fails, the test result and failure message are still stored.
+
+### Redaction
+
+Before evidence is written or passed to AI, TestSentry redacts sensitive values including passwords, tokens, cookies, authorization headers, API keys, and sensitive URL query parameters.
+
+---
+
+## Health score
+
+The health score is calculated out of 100:
+
+| Dimension | Maximum | Measures |
+|---|---:|---|
+| Speed | 20 | Average test duration. |
+| Stability | 20 | Pass rate for the selected run. |
+| Flakiness | 20 | Strictly classified flaky tests. |
+| Coverage | 20 | Available line-coverage results. |
+| Quality | 20 | Newly failing and regression signals. |
+
+The Overview and Flakiness pages use the same flakiness classifier so their counts remain consistent.
+
+---
+
+## Dashboard
+
+Start the local dashboard:
+
+```bash
+testsentry dashboard
+```
+
+Default URL:
+
+```text
+http://127.0.0.1:8088
+```
+
+The dashboard includes:
+
+- **Overview** — health score, pass rate, duration, flaky count, regression summary, and AI statistics.
+- **Test Results** — every pytest call-phase result, status, label, error, and triage action.
+- **Flakiness Analysis** — flaky-test leaderboard, transition counts, failure rate, rating, and trend.
+- **Risk & Ownership** — ownership and change-frequency analysis when run inside a Git repository.
+- **AI Triage** — cached analyses, explanations, suggested fixes, and affected modules.
+- **History** — health scores and run summaries across completed sessions.
+
+The `favicon.ico 404` message sometimes printed by the server is harmless and does not affect test execution or dashboard metrics.
+
+---
+
+## CLI reference
+
+```bash
+testsentry scan       # Generate an HTML health report
+testsentry status     # Show recent test results
+testsentry history    # Show health scores across runs
+testsentry flaky      # Show the flaky-test leaderboard
+testsentry dashboard  # Start the local FastAPI dashboard
+testsentry risk       # Show ownership and risk information
+testsentry coverage   # Show coverage by module
+testsentry clear      # Clear the local database
+testsentry version    # Print the installed version
+testsentry validate-repair  # Validate a safe test-only candidate patch
+```
+
+---
+
+## Safe repair validation
+
+TestSentry does not automatically modify application code or push changes. The repair workflow is deliberately conservative:
+
+- Candidate patches are applied in an isolated temporary copy.
+- Only permitted test-side categories can enter candidate validation.
+- Non-test file changes are rejected.
+- The failed test and related suite can be rerun for validation.
+- Application, API, authentication, environment, data, and unknown failures remain CI failures.
+- A human must review any accepted candidate before committing or opening a pull request.
+
+---
+
+## Database and privacy
+
+The default database file is:
+
+```text
+testsentry.db
+```
+
+It is created relative to the current working directory. This makes each project directory independent, but it also means that running pytest and the dashboard from different directories can produce apparently missing history.
+
+To inspect database locations:
+
+```bash
+find ~ -name testsentry.db -print
+```
+
+Do not delete a database unless you intend to remove that directory's test history. Runtime audit logs and generated coverage artifacts are ignored by the repository configuration.
+
+---
+
+## CI/CD
+
+The GitHub Actions workflow runs the automated suite and supports:
+
+- Python 3.11 and 3.12.
+- Dependency installation from the project requirements.
+- Coverage generation.
+- Optional browser dependencies.
+- Failure-preserving report generation.
+
+Run the local equivalent:
+
+```bash
+python -m pytest tests/ -q
+```
+
+The current repository suite contains **79 passing tests** with one non-blocking dependency warning in the verified environment.
+
+---
+
+## Project structure
+
+```text
+.
+├── src/testsentry/
+│   ├── ai_triage.py              # OpenAI/Ollama structured failure analysis
+│   ├── api.py                    # FastAPI dashboard backend
+│   ├── cli.py                    # Click command-line interface
+│   ├── collector.py              # DuckDB persistence and migrations
+│   ├── coverage_analyzer.py      # Coverage integration
+│   ├── evidence.py               # Playwright/Selenium/API evidence capture
+│   ├── fingerprinter.py          # Normalized SHA-256 error fingerprints
+│   ├── flakiness_analyzer.py     # Strict flaky-test classification
+│   ├── health_engine.py          # Five-dimension health score
+│   ├── ownership_mapper.py       # Git ownership and risk analysis
+│   ├── plugin.py                 # Pytest hooks
+│   ├── regression_detector.py    # Historical result labels
+│   ├── repair.py                 # Safe isolated patch validation
+│   └── report_generator.py       # HTML report generation
+├── dashboard/                    # Dashboard HTML, CSS, and JavaScript
+├── templates/                    # HTML report templates
+├── tests/                        # Unit, integration, safety, and regression tests
+├── .github/workflows/            # GitHub Actions workflow
+├── requirements.txt              # Direct dependencies
+├── requirements-lock.txt         # Pinned dependency versions
+└── pyproject.toml                # Package and pytest-plugin configuration
+```
+
+---
+
+## Limitations and safety notes
+
+- AI output is an analysis aid, not a replacement for engineering review.
+- OpenAI triage requires a valid API key and may incur provider charges.
+- Ollama requires a running local model and sufficient system resources.
+- Ownership mapping requires running from a Git repository with accessible history.
+- Browser evidence depends on the browser framework and objects being available.
+- Automatic application-code repair is intentionally not supported.
+
+---
+
+## License
+
+This project is released under the [MIT License](LICENSE).
+
+## Author
+
+**Joshva-Jashper**
+
+Repository: [github.com/Joshva-Jashper/Real-time-Health-Sentinel](https://github.com/Joshva-Jashper/Real-time-Health-Sentinel)
