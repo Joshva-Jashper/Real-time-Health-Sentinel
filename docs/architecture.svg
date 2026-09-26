@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="820" viewBox="0 0 1200 820" role="img" aria-labelledby="title desc">
+  <title id="title">TestSentry architecture</title>
+  <desc id="desc">Animated flow from test execution through the pytest plugin, storage and evidence, analysis, and reporting surfaces.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#08111f"/><stop offset="1" stop-color="#101d33"/>
+    </linearGradient>
+    <linearGradient id="core" x1="0" x2="1"><stop stop-color="#2563eb"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
+    <linearGradient id="analysis" x1="0" x2="1"><stop stop-color="#0f766e"/><stop offset="1" stop-color="#0891b2"/></linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000" flood-opacity=".28"/></filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#67e8f9"/></marker>
+    <style>
+      .label{font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;fill:#f8fafc;text-anchor:middle}
+      .title{font-size:22px;font-weight:750}.sub{font-size:14px;fill:#cbd5e1}.small{font-size:13px;fill:#bae6fd}
+      .node{filter:url(#shadow);stroke:#334155;stroke-width:1.5}.core{fill:url(#core)}.store{fill:#172554}.evidence{fill:#3b1f5e}.analysis{fill:url(#analysis)}.output{fill:#172f3d}
+      .flow{fill:none;stroke:#67e8f9;stroke-width:3;stroke-linecap:round;marker-end:url(#arrow);stroke-dasharray:12 12;animation:flow 2.5s linear infinite}
+      .flow.delay1{animation-delay:.45s}.flow.delay2{animation-delay:.9s}.flow.delay3{animation-delay:1.35s}
+      .pulse{transform-box:fill-box;transform-origin:center;animation:pulse 2.8s ease-in-out infinite}.pulse.d1{animation-delay:.7s}.pulse.d2{animation-delay:1.4s}.pulse.d3{animation-delay:2.1s}
+      .dot{fill:#a5f3fc;animation:blink 1.7s ease-in-out infinite}.dot.d1{animation-delay:.4s}.dot.d2{animation-delay:.8s}.dot.d3{animation-delay:1.2s}
+      @keyframes flow{to{stroke-dashoffset:-48}}@keyframes pulse{0%,100%{opacity:1;filter:url(#shadow)}50%{opacity:.78;filter:url(#shadow)}}@keyframes blink{0%,100%{opacity:.25}50%{opacity:1}}
+    </style>
+  </defs>
+  <rect width="1200" height="820" rx="28" fill="url(#bg)"/>
+  <text x="600" y="46" class="label title">TestSentry · continuous test intelligence</text>
+  <text x="600" y="72" class="label sub">Every failed test becomes history, evidence, analysis, and an actionable engineering view</text>
+
+  <g class="pulse">
+    <rect class="node core" x="350" y="105" width="500" height="88" rx="18"/>
+    <text x="600" y="140" class="label title">Test execution</text><text x="600" y="167" class="label sub">Pytest · Playwright · Selenium</text>
+  </g>
+  <path class="flow" d="M600 193 V250"/>
+  <circle class="dot" cx="600" cy="220" r="5"/>
+
+  <g class="pulse d1">
+    <rect class="node core" x="350" y="250" width="500" height="88" rx="18"/>
+    <text x="600" y="285" class="label title">Pytest plugin</text><text x="600" y="312" class="label sub">Result capture · phases · hooks · metadata</text>
+  </g>
+
+  <path class="flow delay1" d="M600 338 V390 H215 V432"/><path class="flow delay2" d="M600 338 V432"/><path class="flow delay3" d="M600 338 V390 H985 V432"/>
+  <circle class="dot d1" cx="440" cy="390" r="5"/><circle class="dot d2" cx="600" cy="390" r="5"/><circle class="dot d3" cx="760" cy="390" r="5"/>
+
+  <g class="pulse d2">
+    <rect class="node store" x="75" y="432" width="280" height="112" rx="18"/>
+    <text x="215" y="468" class="label title">DuckDB history</text><text x="215" y="495" class="label sub">Runs · results · labels</text><text x="215" y="519" class="label small">Regression timeline</text>
+  </g>
+  <g class="pulse d3">
+    <rect class="node evidence" x="460" y="432" width="280" height="112" rx="18"/>
+    <text x="600" y="468" class="label title">Evidence bundles</text><text x="600" y="495" class="label sub">DOM · screenshots · traces</text><text x="600" y="519" class="label small">Sanitized browser context</text>
+  </g>
+  <g class="pulse d1">
+    <rect class="node store" x="845" y="432" width="280" height="112" rx="18"/>
+    <text x="985" y="468" class="label title">Fingerprints</text><text x="985" y="495" class="label sub">Errors · code · environment</text><text x="985" y="519" class="label small">SHA-256 triage cache</text>
+  </g>
+
+  <path class="flow delay2" d="M215 544 V595 H600 V635"/><path class="flow delay3" d="M600 544 V635"/><path class="flow delay1" d="M985 544 V595 H600 V635"/>
+  <circle class="dot d2" cx="400" cy="595" r="5"/><circle class="dot d3" cx="800" cy="595" r="5"/>
+
+  <g class="pulse d3">
+    <rect class="node analysis" x="350" y="635" width="500" height="88" rx="18"/>
+    <text x="600" y="670" class="label title">Health intelligence</text><text x="600" y="697" class="label sub">Regression · flakiness · health score · AI triage</text>
+  </g>
+  <path class="flow" d="M600 723 V765"/>
+
+  <g class="pulse d1">
+    <rect class="node output" x="90" y="765" width="300" height="42" rx="14"/><text x="240" y="792" class="label sub">HTML report</text>
+  </g>
+  <g class="pulse d2">
+    <rect class="node output" x="450" y="765" width="300" height="42" rx="14"/><text x="600" y="792" class="label sub">FastAPI dashboard</text>
+  </g>
+  <g class="pulse d3">
+    <rect class="node output" x="810" y="765" width="300" height="42" rx="14"/><text x="960" y="792" class="label sub">CLI · CI · team workflow</text>
+  </g>
+</svg>

@@ -44,36 +44,9 @@ The project is designed to answer four practical questions:
 
 ## Architecture
 
-```text
-                         ┌──────────────────────────┐
-                         │       Test execution     │
-                         │  Pytest / Playwright /   │
-                         │        Selenium          │
-                         └────────────┬─────────────┘
-                                      │
-                                      ▼
-                         ┌──────────────────────────┐
-                         │      Pytest plugin        │
-                         │ Result + phase capture   │
-                         └────────────┬─────────────┘
-                                      │
-                 ┌────────────────────┼────────────────────┐
-                 ▼                    ▼                    ▼
-       ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-       │ DuckDB history  │  │ Evidence bundles│  │ Error fingerprints│
-       │ runs + results  │  │ DOM + screenshots│  │ SHA-256 cache    │
-       └────────┬────────┘  └────────┬────────┘  └────────┬────────┘
-                └───────────────────┼───────────────────┘
-                                    ▼
-                         ┌──────────────────────────┐
-                         │ Regression + flakiness   │
-                         │ Health score + AI triage │
-                         └────────────┬─────────────┘
-                                      │
-                    ┌─────────────────┼─────────────────┐
-                    ▼                 ▼                 ▼
-             HTML report        FastAPI dashboard     CLI / CI
-```
+![Animated TestSentry architecture: test execution flows through result capture, history, evidence, analysis, and reporting](docs/architecture.svg)
+
+The diagram is an animated SVG: moving dashes show data flow, while the staged pulses highlight the path from execution to actionable outputs.
 
 ---
 
