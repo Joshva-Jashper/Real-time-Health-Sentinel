@@ -609,3 +609,86 @@ body::before {
 @media (prefers-reduced-motion: reduce) {
   body::before, .sidebar::after, .brand-logo, .freshness.live .freshness-dot, .signal-pulse, .pipeline-step.current i, .pipeline-line::after, .overview-hero::before { animation: none !important; }
 }
+
+
+/* ── TRUE BLACK TEST CONSOLE THEME ──
+   Final visual layer: black-first surfaces, restrained status accents, same logic. */
+:root {
+  --bg: #020202;
+  --bg2: #070707;
+  --surface: rgba(13, 13, 13, .94);
+  --surface-h: #181818;
+  --border: rgba(255, 255, 255, .09);
+  --border-h: rgba(255, 255, 255, .2);
+  --accent: #b8b8b8;
+  --accent-2: #f0f0f0;
+  --accent-g: rgba(255, 255, 255, .09);
+  --blue: #a3a3a3;
+  --lab-cyan: #d4d4d4;
+  --lab-cyan-soft: rgba(255, 255, 255, .08);
+  --lab-violet: #8f8f8f;
+  --lab-grid: rgba(255, 255, 255, .055);
+  --text: #f5f5f5;
+  --text2: #c7c7c7;
+  --text3: #777;
+  --text-muted: #9b9b9b;
+  --surface-solid: #0d0d0d;
+  --surface-raised: #151515;
+  --green: #39d98a;
+  --green-g: rgba(57, 217, 138, .12);
+  --yellow: #e8b84a;
+  --yellow-g: rgba(232, 184, 74, .12);
+  --red: #ff6262;
+  --red-g: rgba(255, 98, 98, .12);
+  --orange: #f08a4b;
+  --orange-g: rgba(240, 138, 75, .12);
+}
+
+body {
+  background-color: #020202;
+  background-image:
+    linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px),
+    radial-gradient(ellipse at 50% -20%, rgba(255,255,255,.055), transparent 42%);
+  background-size: 42px 42px, 42px 42px, auto;
+}
+body::before { opacity: .18; background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(255,255,255,.018) 4px); }
+.sidebar { background: linear-gradient(180deg, #080808, #030303); border-right-color: rgba(255,255,255,.12); }
+.sidebar::after { background: linear-gradient(180deg, transparent, rgba(255,255,255,.6), transparent); }
+.brand-logo { background: #111; border-color: rgba(255,255,255,.22); box-shadow: 0 0 0 4px rgba(255,255,255,.025), 0 0 24px rgba(255,255,255,.12); }
+@keyframes logoBreath { 0%,100% { box-shadow: 0 0 0 4px rgba(255,255,255,.025), 0 0 18px rgba(255,255,255,.08); } 50% { box-shadow: 0 0 0 7px rgba(255,255,255,.015), 0 0 28px rgba(255,255,255,.17); } }
+.brand-subtitle { color: #bdbdbd; }
+.nav-item.active { background: linear-gradient(90deg, rgba(255,255,255,.11), rgba(255,255,255,.035)); border-color: rgba(255,255,255,.22); color: #fff; box-shadow: inset 3px 0 0 #efefef, 0 8px 20px rgba(0,0,0,.35); }
+.nav-item.active .nav-icon { filter: drop-shadow(0 0 6px rgba(255,255,255,.45)); }
+.nav-item::after { background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent); }
+.topbar { background: rgba(4,4,4,.92); border-bottom-color: rgba(255,255,255,.12); }
+.run-badge, .run-selector-wrap, .icon-btn { background: #0c0c0c; border-color: rgba(255,255,255,.14); }
+.run-badge { color: #dedede; }
+.icon-btn:hover, .run-selector-wrap:hover { border-color: rgba(255,255,255,.35); box-shadow: 0 0 18px rgba(255,255,255,.06); }
+.freshness.live { color: #9af0bf; }
+
+.quality-strip { background: linear-gradient(90deg, rgba(10,10,10,.97), rgba(20,20,20,.9)); border-color: rgba(255,255,255,.15); box-shadow: 0 0 28px rgba(0,0,0,.45); }
+.quality-strip-label, .quality-strip-code { color: #d5d5d5; }
+.signal-pulse { background: #e5e5e5; box-shadow: 0 0 0 0 rgba(255,255,255,.55); }
+@keyframes signalRing { 0% { box-shadow: 0 0 0 0 rgba(255,255,255,.5); } 70% { box-shadow: 0 0 0 9px rgba(255,255,255,0); } 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); } }
+.pipeline-step.current { color: #fff; }.pipeline-step.current i { border-color: #eee; color: #fff; box-shadow: 0 0 12px rgba(255,255,255,.28); }
+.pipeline-step.done { color: #8ee8b2; }.pipeline-step.done i { border-color: rgba(57,217,138,.55); background: rgba(57,217,138,.1); }
+.pipeline-line { background: linear-gradient(90deg, rgba(255,255,255,.5), rgba(100,100,100,.5)); }.pipeline-line::after { background: linear-gradient(90deg, transparent, #fff, transparent); }
+
+.overview-hero, .card, .stat-card { background-color: #0d0d0d; background-image: linear-gradient(145deg, rgba(255,255,255,.025), transparent 55%); border-color: rgba(255,255,255,.12); box-shadow: 0 16px 42px rgba(0,0,0,.48), inset 0 1px rgba(255,255,255,.035); }
+.overview-hero { background: linear-gradient(145deg, #111, #090909); }
+.overview-hero::after { background: radial-gradient(circle at 100% 50%, rgba(255,255,255,.045) 0%, transparent 70%); }
+.overview-hero::before { background: linear-gradient(115deg, transparent 0 35%, rgba(255,255,255,.035) 50%, transparent 65%); }
+.card:hover, .stat-card:hover { border-color: rgba(255,255,255,.28); box-shadow: 0 18px 48px rgba(0,0,0,.62), 0 0 24px rgba(255,255,255,.035); }
+.score-num { background: linear-gradient(135deg, #fff, #929292); -webkit-background-clip: text; }
+.dim-bar-fill { background: linear-gradient(90deg, #777, #f0f0f0); box-shadow: 0 0 12px rgba(255,255,255,.22); }
+
+.data-table th { color: #bcbcbc; background: linear-gradient(180deg, #171717, #101010); }
+.data-table tbody tr:hover:not(.empty-row) { box-shadow: inset 3px 0 0 #ddd; background: rgba(255,255,255,.045); }
+.btn-primary { background: linear-gradient(135deg, #2a2a2a, #707070); border-color: rgba(255,255,255,.35); color: #fff; }
+.btn-primary:hover { box-shadow: 0 0 20px rgba(255,255,255,.14), 0 6px 16px rgba(0,0,0,.4); }
+.cache-bar-fill, .conf-fill { background: linear-gradient(90deg, #4d4d4d, #d8d8d8); box-shadow: 0 0 10px rgba(255,255,255,.2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .signal-pulse, .pipeline-line::after, .pipeline-step.current i { animation: none !important; }
+}
