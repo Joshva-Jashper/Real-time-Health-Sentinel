@@ -72,12 +72,14 @@ def get_connection(read_only: bool = False) -> duckdb.DuckDBPyConnection:
             except Exception:
                 pass
         _thread_local.conn = None
-        try:
-            conn = duckdb.connect(DB_PATH, read_only=True)
-        except Exception:
-            if not os.path.exists(SNAPSHOT_PATH):
-                raise
-            conn = duckdb.connect(SNAPSHOT_PATH, read_only=True)
+        # Never attach the dashboard to the live database. On some DuckDB
+        # builds even a read-only attachment conflicts with the pytest writer.
+        # The writer refreshes this snapshot after each committed result.
+        if not os.path.exists(SNAPSHOT_PATH):
+            raise RuntimeError(
+                f"Dashboard snapshot is missing: {SNAPSHOT_PATH}. Start the dashboard once before pytest."
+            )
+        conn = duckdb.connect(SNAPSHOT_PATH, read_only=True)
         _thread_local.conn = conn
         return conn
 
