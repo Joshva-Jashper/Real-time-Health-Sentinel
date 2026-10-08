@@ -21,6 +21,11 @@ window.addEventListener("DOMContentLoaded", () => {
     if (evidence) openEvidence(evidence.dataset.testName);
   });
   loadAll();
+  const liveToggle = document.getElementById("auto-refresh-toggle");
+  if (liveToggle) {
+    liveToggle.checked = true;
+    toggleAutoRefresh(liveToggle);
+  }
 });
 
 async function loadAll() {
@@ -505,7 +510,7 @@ async function loadHistory() {
 // ── Helpers ──
 async function apiFetch(path) {
   try {
-    const res = await fetch(`${API}${path}`);
+    const res = await fetch(`${API}${path}`, { cache: "no-store" });
     if (!res.ok) throw new Error(res.statusText);
     setConnectionStatus(true);
     return await res.json();
