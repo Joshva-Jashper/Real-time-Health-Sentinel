@@ -305,6 +305,16 @@ def dashboard(port, host):
         collector.init_db()
     except Exception:
         pass
+    finally:
+        # Do not carry the temporary writer connection into Uvicorn. The API
+        # startup will reopen the database read-only or use the snapshot.
+        connection = getattr(collector._thread_local, "conn", None)
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
+        collector._thread_local.conn = None
     os.environ["TESTSENTRY_READ_ONLY"] = "true"
     collector.READ_ONLY = True
 
