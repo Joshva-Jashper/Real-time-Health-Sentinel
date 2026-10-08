@@ -2,7 +2,7 @@ from datetime import datetime
 from testsentry.ai_triage import langfuse
 import pytest
 import uuid
-from testsentry.collector import init_db, store_result, get_newly_failing_with_triage, get_fixed_tests, store_run_metadata, get_connection
+from testsentry.collector import init_db, store_result, get_newly_failing_with_triage, get_fixed_tests, store_run_metadata, start_run_metadata, get_connection
 from testsentry.ai_triage import triage_failure
 from testsentry.health_engine import calculate_health_score
 from testsentry.regression_detector import label_test
@@ -44,6 +44,10 @@ def _capture_browser_evidence(item, result):
 def pytest_configure(config):
     """Initialize database when pytest starts."""
     init_db()
+    try:
+        start_run_metadata(RUN_ID, START_TIME)
+    except Exception as exc:
+        print(f"[TestSentry] ⚠️ Live metadata error: {type(exc).__name__}")
     print(f"\n[TestSentry] Run ID: {RUN_ID}")
 
 
@@ -145,9 +149,9 @@ def pytest_runtest_makereport(item, call):
         }
         
         label = label_test(result, RUN_ID) if report.when == "call" else "PHASE_FAILURE"
-        store_result(result, RUN_ID, label, phase=report.when)
 
         if report.when != "call":
+            store_result(result, RUN_ID, label, phase=report.when)
             return
 
         label_icon = {
@@ -164,6 +168,13 @@ def pytest_runtest_makereport(item, call):
         if result["status"] == "FAILED":
             try:
                 _capture_browser_evidence(item, result)
+            except Exception as e:
+                print(f"\n[TestSentry] ⚠️ Evidence error (skipping): {type(e).__name__}")
+
+        # Store after evidence capture so the dashboard can open the bundle.
+        store_result(result, RUN_ID, label, phase=report.when)
+        if result["status"] == "FAILED":
+            try:
                 triage_failure(result)
             except Exception as e:
                 print(f"\n[TestSentry] ⚠️ Triage error (skipping): {type(e).__name__}")

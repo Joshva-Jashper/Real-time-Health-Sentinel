@@ -4,13 +4,16 @@ import json
 import os
 import threading
 import time
+import io
+import zipfile
 from collections import defaultdict, deque
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -107,6 +110,7 @@ def list_runs(limit: int = Query(10, ge=1, le=100)):
         """
         SELECT run_id, started_at, finished_at, total_tests, passed, failed
         FROM run_metadata
+        WHERE finished_at IS NOT NULL
         ORDER BY finished_at DESC
         LIMIT ?
         """,
@@ -143,6 +147,70 @@ def regression(run_id: str):
     return get_regression_summary(run_id)
 
 
+@app.get("/api/live")
+def live_status(run_id: Optional[str] = None):
+    """Return the currently running pytest session and incremental counters."""
+    conn = get_connection()
+    if not run_id:
+        row = conn.execute(
+            "SELECT run_id FROM run_metadata WHERE finished_at IS NULL ORDER BY started_at DESC LIMIT 1"
+        ).fetchone()
+        run_id = row[0] if row else None
+    if not run_id:
+        return {"running": False, "run_id": None, "total": 0, "completed": 0, "passed": 0, "failed": 0, "progress_pct": 100}
+    meta = conn.execute(
+        "SELECT run_id, started_at, total_tests, passed, failed, finished_at FROM run_metadata WHERE run_id = ?",
+        [run_id],
+    ).fetchone()
+    if not meta:
+        return {"running": False, "run_id": run_id, "total": 0, "completed": 0, "passed": 0, "failed": 0, "progress_pct": 0}
+    completed, passed, failed = conn.execute("""
+        SELECT COUNT(*) FILTER (WHERE phase = 'call'),
+               COUNT(*) FILTER (WHERE phase = 'call' AND status = 'PASSED'),
+               COUNT(*) FILTER (WHERE phase = 'call' AND status = 'FAILED')
+        FROM test_runs WHERE run_id = ?
+    """, [run_id]).fetchone()
+    expected = int(meta[2] or 0)
+    completed = int(completed or 0)
+    return {
+        "running": meta[5] is None, "run_id": run_id,
+        "started": str(meta[1]) if meta[1] else None,
+        "total": expected or completed, "completed": completed,
+        "passed": int(passed or 0), "failed": int(failed or 0),
+        "progress_pct": round((completed / expected) * 100, 1) if expected else 0,
+    }
+
+
+@app.get("/api/analytics")
+def analytics(limit: int = Query(20, ge=1, le=100)):
+    """Return multi-run analytics for trend charts and quality comparisons."""
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT run_id, started_at, finished_at, total_tests, passed, failed
+        FROM run_metadata WHERE finished_at IS NOT NULL
+        ORDER BY finished_at DESC LIMIT ?
+    """, [limit]).fetchall()
+    result = []
+    for run_id, started, finished, total, passed, failed in reversed(rows):
+        duration = conn.execute("""
+            SELECT COALESCE(AVG(duration), 0) FROM test_runs
+            WHERE run_id = ? AND phase = 'call'
+        """, [run_id]).fetchone()[0]
+        score = calculate_health_score(run_id)
+        total, passed, failed = int(total or 0), int(passed or 0), int(failed or 0)
+        result.append({
+            "run_id": run_id, "started": str(started), "finished": str(finished),
+            "total": total, "passed": passed, "failed": failed,
+            "pass_rate": round((passed / total) * 100, 1) if total else 0,
+            "failure_frequency": round((failed / total) * 100, 1) if total else 0,
+            "avg_duration": round(float(duration or 0), 4),
+            "health_score": score["total_score"], "total_score": score["total_score"],
+            "coverage_pct": score["coverage_score"] * 5,
+            "flaky_count": score["flaky_count"],
+        })
+    return result
+
+
 @app.get("/api/flaky")
 def flaky(run_id: Optional[str] = None):
     return {
@@ -170,7 +238,7 @@ def test_results(run_id: str):
     conn = get_connection()
     rows = conn.execute(
         """
-        SELECT test_name, status, duration, error_msg, label, timestamp
+        SELECT test_name, status, duration, error_msg, label, timestamp, evidence_dir
         FROM test_runs
         WHERE run_id = ? AND phase = 'call'
         ORDER BY timestamp DESC
@@ -188,9 +256,69 @@ def test_results(run_id: str):
                        if row[4] == "NEW_TEST" and row[1] == "FAILED"
                        else [row[4]] if row[4] else []),
             "timestamp": str(row[5]),
+            "evidence_available": bool(row[6] and Path(row[6]).is_dir()),
         }
         for row in rows
     ]
+
+
+def _evidence_dir(run_id: str, test_name: str) -> Path:
+    conn = get_connection()
+    row = conn.execute("""
+        SELECT evidence_dir FROM test_runs
+        WHERE run_id = ? AND test_name = ? AND phase = 'call' AND evidence_dir IS NOT NULL
+        ORDER BY timestamp DESC LIMIT 1
+    """, [run_id, test_name]).fetchone()
+    if not row or not row[0]:
+        raise HTTPException(status_code=404, detail="No evidence bundle found for this test")
+    directory = Path(row[0]).resolve()
+    if not directory.is_dir():
+        raise HTTPException(status_code=404, detail="Evidence bundle is no longer available")
+    return directory
+
+
+@app.get("/api/evidence/{run_id}")
+def evidence(run_id: str, test_name: str):
+    """Return evidence metadata and safe download URLs for one failed test."""
+    conn = get_connection()
+    directory = _evidence_dir(run_id, test_name)
+    files = sorted(p.name for p in directory.iterdir() if p.is_file() and p.name != "manifest.json")
+    timeline = conn.execute("""
+        SELECT phase, status, duration, timestamp FROM test_runs
+        WHERE run_id = ? AND test_name = ? ORDER BY timestamp ASC, rowid ASC
+    """, [run_id, test_name]).fetchall()
+    return {
+        "run_id": run_id, "test_name": test_name, "files": files,
+        "file_urls": {name: f"/api/evidence-file/{run_id}?test_name={test_name}&name={name}" for name in files},
+        "download_url": f"/api/evidence-download/{run_id}?test_name={test_name}",
+        "timeline": [{"phase": row[0], "status": row[1], "duration": row[2], "timestamp": str(row[3])} for row in timeline],
+    }
+
+
+@app.get("/api/evidence-file/{run_id}")
+def evidence_file(run_id: str, test_name: str, name: str):
+    directory = _evidence_dir(run_id, test_name)
+    safe_name = Path(name).name
+    if safe_name != name or safe_name in {"manifest.json", ""}:
+        raise HTTPException(status_code=400, detail="Invalid evidence filename")
+    target = (directory / safe_name).resolve()
+    if target.parent != directory or not target.is_file():
+        raise HTTPException(status_code=404, detail="Evidence file not found")
+    return FileResponse(str(target), filename=safe_name)
+
+
+@app.get("/api/evidence-download/{run_id}")
+def evidence_download(run_id: str, test_name: str):
+    directory = _evidence_dir(run_id, test_name)
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w", zipfile.ZIP_DEFLATED) as archive:
+        for target in directory.iterdir():
+            if target.is_file():
+                archive.write(target, target.name)
+    payload.seek(0)
+    return StreamingResponse(payload, media_type="application/zip", headers={
+        "Content-Disposition": f'attachment; filename="testsentry-evidence-{run_id}.zip"'
+    })
 
 
 @app.get("/api/triage-cache")

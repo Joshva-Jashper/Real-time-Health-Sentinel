@@ -100,6 +100,11 @@
       </div>
       <span class="quality-strip-code">RUN / OBSERVE / IMPROVE</span>
     </div>
+    <div class="live-monitor card" id="live-monitor" aria-live="polite">
+      <div class="live-monitor-head"><div><h2 class="card-title">Live Test Monitoring</h2><p class="card-sub">Updates while the pytest session is running.</p></div><span class="live-pill" id="live-pill">IDLE</span></div>
+      <div class="live-progress"><div class="live-progress-fill" id="live-progress-fill"></div></div>
+      <div class="live-metrics"><span><strong id="live-completed">0</strong> completed</span><span class="live-pass"><strong id="live-passed">0</strong> passed</span><span class="live-fail"><strong id="live-failed">0</strong> failed</span><span><strong id="live-total">0</strong> total</span><span id="live-message">Waiting for a test run…</span></div>
+    </div>
     <div class="overview-hero">
       <div class="hero-ring-col">
         <div class="score-ring-wrap">
@@ -313,6 +318,10 @@
         <div class="chart-wrap"><canvas id="passRateChart"></canvas></div>
       </div>
     </div>
+    <div class="two-col analytics-grid">
+      <div class="card"><div class="card-title-row"><h2 class="card-title">Failure Frequency</h2><span class="card-title-icon">⚠️</span></div><div class="chart-wrap"><canvas id="failureFrequencyChart"></canvas></div></div>
+      <div class="card"><div class="card-title-row"><h2 class="card-title">Duration & Flaky History</h2><span class="card-title-icon">⏱</span></div><div class="chart-wrap"><canvas id="qualityTrendChart"></canvas></div></div>
+    </div>
     <div class="card" style="margin-top:20px">
       <div class="card-title-row"><div><h2 class="card-title">All Runs</h2><p class="card-sub">Compare health and pass-rate movement across recent runs.</p></div><span class="card-title-icon" aria-hidden="true">📋</span></div>
       <div class="table-wrap">
@@ -335,7 +344,12 @@
     <div class="modal-body" id="modal-body"></div>
   </div>
 </div>
-
+<div id="evidence-modal" class="modal-overlay" onclick="closeEvidenceModal(event)">
+  <div class="modal-box evidence-modal-box" role="dialog" aria-modal="true" aria-labelledby="evidence-modal-title">
+    <div class="modal-header"><h3 class="modal-title" id="evidence-modal-title">Failure Evidence</h3><button class="modal-close" aria-label="Close evidence" onclick="document.getElementById('evidence-modal').classList.remove('open')">✕</button></div>
+    <div class="modal-body" id="evidence-body"><div class="empty-row">Loading evidence…</div></div>
+  </div>
+</div>
 <script src="/static/app.js"></script>
 </body>
 </html>

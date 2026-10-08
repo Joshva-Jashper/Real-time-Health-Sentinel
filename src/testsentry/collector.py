@@ -92,7 +92,8 @@ def init_db():
             phase       VARCHAR DEFAULT 'call',
             timestamp   TIMESTAMP,
             code_revision VARCHAR,
-            environment_signature VARCHAR
+            environment_signature VARCHAR,
+            evidence_dir VARCHAR
         )
     """)
     try:
@@ -111,6 +112,7 @@ def init_db():
     for col_def in [
         ("code_revision", "VARCHAR"),
         ("environment_signature", "VARCHAR"),
+        ("evidence_dir", "VARCHAR"),
     ]:
         try:
             conn.execute(f"ALTER TABLE test_runs ADD COLUMN {col_def[0]} {col_def[1]}")
@@ -179,11 +181,11 @@ def store_result(result: dict, run_id: str, label: str = "NEW_TEST", phase: str 
         conn.execute("""
             INSERT INTO test_runs
                 (run_id, test_name, status, duration, error_msg, fingerprint, label, phase,
-                 timestamp, code_revision, environment_signature)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 timestamp, code_revision, environment_signature, evidence_dir)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, [run_id, result["test_name"], result["status"], result.get("duration", 0),
               result.get("error_msg"), fp, label, phase, datetime.now(),
-              CODE_REVISION, ENVIRONMENT_SIGNATURE])
+              CODE_REVISION, ENVIRONMENT_SIGNATURE, result.get("evidence_dir")])
 
 
 def store_triage_event(run_id: str | None, fp: str, backend: str, cache_hit: bool):
@@ -193,16 +195,35 @@ def store_triage_event(run_id: str | None, fp: str, backend: str, cache_hit: boo
     """, [run_id, fp, backend, cache_hit, not cache_hit])
 
 
+def start_run_metadata(run_id: str, started_at: datetime):
+    """Create an in-progress run row so the dashboard can monitor it live."""
+    conn = get_connection()
+    conn.execute("""
+        INSERT INTO run_metadata (run_id, started_at, finished_at, total_tests, passed, failed)
+        VALUES (?, ?, NULL, 0, 0, 0)
+    """, [run_id, started_at])
+
+
 def store_run_metadata(run_id: str, started_at: datetime, finished_at: datetime, total: int, passed: int, failed: int):
     """
     Record complete run session metadata in DuckDB.
     """
     conn = get_connection()
+    exists = conn.execute(
+        "SELECT 1 FROM run_metadata WHERE run_id = ? LIMIT 1", [run_id]
+    ).fetchone()
     conn.execute("""
-        INSERT INTO run_metadata
-            (run_id, started_at, finished_at, total_tests, passed, failed)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, [run_id, started_at, finished_at, total, passed, failed])
+        UPDATE run_metadata
+        SET started_at = ?, finished_at = ?, total_tests = ?, passed = ?, failed = ?
+        WHERE run_id = ?
+    """, [started_at, finished_at, total, passed, failed, run_id]).fetchone()
+    # Preserve compatibility with runs created before live lifecycle tracking.
+    if exists is None:
+        conn.execute("""
+            INSERT INTO run_metadata
+                (run_id, started_at, finished_at, total_tests, passed, failed)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, [run_id, started_at, finished_at, total, passed, failed])
     pass  # shared connection — do not close
 
 
