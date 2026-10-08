@@ -5,13 +5,18 @@ import platform
 import shutil
 import subprocess
 import sys
+import sys
 import threading
 from datetime import datetime
 from testsentry.fingerprinter import fingerprint
 
 
 DB_PATH = os.path.join(os.getcwd(), "testsentry.db")
-READ_ONLY = os.getenv("TESTSENTRY_READ_ONLY", "false").lower() in {"1", "true", "yes", "on"}
+_dashboard_requested = os.getenv("TESTSENTRY_READ_ONLY", "false").lower() in {"1", "true", "yes", "on"}
+_pytest_process = "pytest" in os.path.basename(sys.argv[0]).lower() or any(
+    "pytest" == arg or arg.endswith("/pytest") for arg in sys.argv[:2]
+)
+READ_ONLY = _dashboard_requested and not _pytest_process
 SNAPSHOT_PATH = f"{DB_PATH}.dashboard-snapshot"
 # Namespace cache entries by project; an explicit value supports shared deployments.
 CACHE_NAMESPACE = os.getenv("TESTSENTRY_CACHE_NAMESPACE", os.path.abspath(os.getcwd()))

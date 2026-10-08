@@ -10,6 +10,7 @@ from testsentry.report_generator import generate_report
 from testsentry.email_notifier import send_email_notification
 from testsentry.evidence import capture_playwright, capture_selenium, create_bundle
 import os
+import testsentry.collector as collector
 
 
 RUN_ID = str(uuid.uuid4())[:8]
@@ -43,6 +44,11 @@ def _capture_browser_evidence(item, result):
 
 def pytest_configure(config):
     """Initialize database when pytest starts."""
+    # pytest is the database writer. If a shell or launcher inherited the
+    # dashboard-only flag, override it before schema creation and result
+    # collection begin.
+    os.environ.pop("TESTSENTRY_READ_ONLY", None)
+    collector.READ_ONLY = False
     init_db()
     try:
         start_run_metadata(RUN_ID, START_TIME)
