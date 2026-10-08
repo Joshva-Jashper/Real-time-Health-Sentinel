@@ -227,7 +227,8 @@ def _refresh_dashboard_snapshot():
         # Copy committed tables through DuckDB rather than copying the live
         # file bytes. A raw file copy can catch pages mid-write and produce
         # corrupted values for dashboard readers.
-        conn.execute("ATTACH ? AS dashboard_snapshot", [temp_snapshot])
+        attach_path = temp_snapshot.replace("'", "''")
+        conn.execute(f"ATTACH '{attach_path}' AS dashboard_snapshot")
         for table in ("test_runs", "run_metadata", "triage_events", "triage_cache", "triage_cache_lock"):
             conn.execute(
                 f'CREATE TABLE dashboard_snapshot."{table}" AS SELECT * FROM main."{table}"'
