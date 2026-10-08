@@ -91,10 +91,7 @@ def get_connection(read_only: bool = False) -> duckdb.DuckDBPyConnection:
             _thread_local.conn = None
 
     if conn is None:
-        try:
-            conn = duckdb.connect(DB_PATH, read_only=(read_only or READ_ONLY))
-        except Exception:
-            conn = duckdb.connect(DB_PATH, read_only=True)
+        conn = duckdb.connect(DB_PATH, read_only=(read_only or READ_ONLY))
         _thread_local.conn = conn
     return conn
 
