@@ -5,6 +5,7 @@ import platform
 import shutil
 import subprocess
 import sys
+from contextvars import ContextVar
 import sys
 import threading
 from datetime import datetime
@@ -18,6 +19,7 @@ _pytest_process = "pytest" in os.path.basename(sys.argv[0]).lower() or any(
 )
 READ_ONLY = _dashboard_requested and not _pytest_process
 SNAPSHOT_PATH = f"{DB_PATH}.dashboard-snapshot"
+dashboard_request_token: ContextVar[object | None] = ContextVar("dashboard_request_token", default=None)
 # Namespace cache entries by project; an explicit value supports shared deployments.
 CACHE_NAMESPACE = os.getenv("TESTSENTRY_CACHE_NAMESPACE", os.path.abspath(os.getcwd()))
 
@@ -65,23 +67,26 @@ def get_connection(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     re-opened if it was closed (e.g., by test code calling conn.close()).
     """
     if READ_ONLY:
+        request_token = dashboard_request_token.get()
         old = getattr(_thread_local, "conn", None)
-        if old is not None:
+        old_token = getattr(_thread_local, "request_token", None)
+        if old is not None and request_token is not None and old_token is not request_token:
             try:
                 old.close()
             except Exception:
                 pass
-        _thread_local.conn = None
-        # Never attach the dashboard to the live database. On some DuckDB
-        # builds even a read-only attachment conflicts with the pytest writer.
-        # The writer refreshes this snapshot after each committed result.
-        if not os.path.exists(SNAPSHOT_PATH):
-            raise RuntimeError(
-                f"Dashboard snapshot is missing: {SNAPSHOT_PATH}. Start the dashboard once before pytest."
-            )
-        conn = duckdb.connect(SNAPSHOT_PATH, read_only=True)
-        _thread_local.conn = conn
-        return conn
+            _thread_local.conn = None
+        if getattr(_thread_local, "conn", None) is None:
+            # Never attach the dashboard to the live database. On some
+            # DuckDB builds even read-only live attachments conflict with
+            # pytest. The writer refreshes this snapshot after each result.
+            if not os.path.exists(SNAPSHOT_PATH):
+                raise RuntimeError(
+                    f"Dashboard snapshot is missing: {SNAPSHOT_PATH}. Start the dashboard once before pytest."
+                )
+            _thread_local.conn = duckdb.connect(SNAPSHOT_PATH, read_only=True)
+        _thread_local.request_token = request_token
+        return _thread_local.conn
 
     conn = getattr(_thread_local, "conn", None)
     if conn is not None:

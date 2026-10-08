@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from testsentry.collector import get_connection, init_db
+from testsentry.collector import dashboard_request_token, get_connection, init_db
 from testsentry.flakiness_analyzer import get_all_flaky_tests, get_flakiness_summary
 from testsentry.health_engine import calculate_health_score
 from testsentry.ownership_mapper import get_at_risk_modules
@@ -79,7 +79,11 @@ async def api_key_guard(request: Request, call_next):
                 _audit("triage_rate_limited", request)
                 return JSONResponse({"detail": "triage rate limit exceeded"}, status_code=429)
             calls.append(now)
-    return await call_next(request)
+    token = dashboard_request_token.set(object())
+    try:
+        return await call_next(request)
+    finally:
+        dashboard_request_token.reset(token)
 
 
 app.add_middleware(
