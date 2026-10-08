@@ -219,9 +219,21 @@ def _refresh_dashboard_snapshot():
         return
     try:
         conn = getattr(_thread_local, "conn", None)
-        if conn is not None:
-            conn.execute("CHECKPOINT")
-        shutil.copy2(DB_PATH, SNAPSHOT_PATH)
+        if conn is None:
+            return
+        temp_snapshot = f"{SNAPSHOT_PATH}.tmp"
+        if os.path.exists(temp_snapshot):
+            os.remove(temp_snapshot)
+        # Copy committed tables through DuckDB rather than copying the live
+        # file bytes. A raw file copy can catch pages mid-write and produce
+        # corrupted values for dashboard readers.
+        conn.execute("ATTACH ? AS dashboard_snapshot", [temp_snapshot])
+        for table in ("test_runs", "run_metadata", "triage_events", "triage_cache", "triage_cache_lock"):
+            conn.execute(
+                f'CREATE TABLE dashboard_snapshot."{table}" AS SELECT * FROM main."{table}"'
+            )
+        conn.execute("DETACH dashboard_snapshot")
+        os.replace(temp_snapshot, SNAPSHOT_PATH)
     except Exception:
         # Snapshot refresh is optional; never fail a test because of it.
         pass
