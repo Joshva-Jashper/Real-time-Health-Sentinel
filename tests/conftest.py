@@ -17,9 +17,10 @@ def pytest_sessionstart(session):
     collector.DB_PATH = str(temp_dir / "testsentry.db")
     collector.CACHE_NAMESPACE = str(temp_dir)
 
-    if collector._thread_local.conn is not None:
+    thread_conn = getattr(collector._thread_local, "conn", None)
+    if thread_conn is not None:
         try:
-            collector._thread_local.conn.close()
+            thread_conn.close()
         except Exception:
             pass
         collector._thread_local.conn = None
