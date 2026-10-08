@@ -35,3 +35,6 @@ data/
 .DS_Store
 Thumbs.db
 ollama.log
+
+# Dashboard concurrency snapshot
+*.db.dashboard-snapshot
