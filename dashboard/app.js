@@ -281,7 +281,7 @@ function closeEvidenceModal(e) {
 }
 
 async function triggerTriage(test_name, error_msg) {
-  showToast("🤖 Running Local Triage...");
+  showToast("🤖 Checking triage cache...");
   try {
     const res = await fetch(`${API}/api/triage-test`, {
       method: "POST",
@@ -290,6 +290,7 @@ async function triggerTriage(test_name, error_msg) {
     });
     const data = await res.json();
     if (res.ok && data) {
+      showToast(data.cache_hit ? "⚡ Triage result loaded from cache" : "🤖 Triage completed with the model");
       showModal(test_name, data);
       loadAiCache();
     } else {

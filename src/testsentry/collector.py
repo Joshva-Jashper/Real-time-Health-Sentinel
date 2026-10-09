@@ -334,21 +334,28 @@ def cache_lookup(fp: str):
     Returns cached result dict or None if not found.
     """
     conn = get_connection()
-    _ensure_triage_cache(conn)
-    row = conn.execute("""
-        SELECT category, confidence_pct, why_it_failed,
-               suggested_fix, affected_module
-        FROM triage_cache
-        WHERE fingerprint = ?
-    """, [cache_key(fp)]).fetchone()
+    try:
+        row = conn.execute("""
+            SELECT category, confidence_pct, why_it_failed,
+                   suggested_fix, affected_module
+            FROM triage_cache
+            WHERE fingerprint = ?
+        """, [cache_key(fp)]).fetchone()
+    except Exception:
+        # A read-only snapshot can be from before triage_cache existed. Do
+        # not attempt CREATE/ALTER here because that would violate read-only
+        # mode; the caller can use its process-local fallback cache.
+        return None
 
     if row:
-        # Increment hit counter
-        conn.execute("""
-            UPDATE triage_cache
-            SET hit_count = hit_count + 1
-            WHERE fingerprint = ?
-        """, [cache_key(fp)])
+        # Increment hit counter only on a writable live database. Dashboard
+        # snapshots are intentionally immutable while pytest is running.
+        if not READ_ONLY:
+            conn.execute("""
+                UPDATE triage_cache
+                SET hit_count = hit_count + 1
+                WHERE fingerprint = ?
+            """, [cache_key(fp)])
         pass  # shared connection — do not close
         return {
             "category":        row[0],

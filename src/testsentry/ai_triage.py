@@ -12,6 +12,7 @@ import os
 from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping
+import threading
 
 from dotenv import load_dotenv
 from langfuse import get_client
@@ -242,6 +243,13 @@ def automatic_repair_allowed(triage: Mapping[str, Any]) -> bool:
     return repair_allowed(str(triage.get("category", "UNKNOWN")))
 
 
+# The dashboard may run against a read-only DuckDB snapshot while pytest owns
+# the live database. Keep a small process-local cache so repeated dashboard
+# clicks still follow model-once, cache-afterwards semantics in that mode.
+_dashboard_cache: dict[str, dict[str, Any]] = {}
+_dashboard_cache_lock = threading.Lock()
+
+
 def triage_with_gpt(result: Mapping[str, Any], *, client: Any = None) -> dict[str, Any] | None:
     """Analyze a failure with GPT-5 mini, escalating uncertain results to GPT-5."""
     error_msg = str(result.get("error_msg", ""))
@@ -249,7 +257,10 @@ def triage_with_gpt(result: Mapping[str, Any], *, client: Any = None) -> dict[st
         return None
 
     fp = fingerprint(error_msg)
-    cached = None if collector.READ_ONLY else cache_lookup(fp)
+    cached = cache_lookup(fp)
+    if cached is None and collector.READ_ONLY:
+        with _dashboard_cache_lock:
+            cached = dict(_dashboard_cache.get(fp, {})) or None
     backend = "ollama" if TRIAGE_BACKEND == "ollama" else "openai"
     if cached:
         cached["cache_hit"] = True
@@ -279,7 +290,10 @@ def triage_with_gpt(result: Mapping[str, Any], *, client: Any = None) -> dict[st
                 print(f"[TestSentry] GPT-5 escalation failed; keeping mini result: {exc}")
         selected["cache_hit"] = False
         selected["model_used"] = model_used
-        if not collector.READ_ONLY:
+        if collector.READ_ONLY:
+            with _dashboard_cache_lock:
+                _dashboard_cache[fp] = dict(selected)
+        else:
             cache_store(fp, selected)
             store_triage_event(result.get("run_id"), fp, backend, False)
         return selected

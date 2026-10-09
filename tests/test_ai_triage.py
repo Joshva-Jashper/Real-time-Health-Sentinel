@@ -108,6 +108,27 @@ def test_cached_result_does_not_call_gpt(monkeypatch):
     assert result["model_used"] == "cache"
 
 
+def test_dashboard_triage_calls_model_once_then_uses_process_cache(monkeypatch):
+    """Read-only dashboard mode must not send the same failure to the model twice."""
+    result = _result(error_msg="dashboard snapshot failure: unique-cache-case")
+    fp = ai.fingerprint(result["error_msg"])
+    ai._dashboard_cache.pop(fp, None)
+    client = FakeClient([_triage("ENV_ISSUE", 92)])
+    monkeypatch.setattr(ai.collector, "READ_ONLY", True)
+    monkeypatch.setattr(ai, "cache_lookup", lambda _: None)
+    monkeypatch.setattr(ai, "store_triage_event", lambda *args: None)
+
+    first = ai.triage_with_gpt(result, client=client)
+    second = ai.triage_with_gpt(result, client=client)
+
+    assert first["cache_hit"] is False
+    assert second["cache_hit"] is True
+    assert second["model_used"] == "cache"
+    assert client.chat.completions.models == ["gpt-5-mini"]
+    ai._dashboard_cache.pop(fp, None)
+    monkeypatch.setattr(ai.collector, "READ_ONLY", False)
+
+
 def test_ollama_backend_uses_local_model_and_json_mode(monkeypatch):
     client = FakeClient([_triage("LOCATOR_FAILURE", 94)])
     monkeypatch.setattr(ai, "TRIAGE_BACKEND", "ollama")
