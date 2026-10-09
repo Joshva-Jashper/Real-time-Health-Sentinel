@@ -1950,3 +1950,25 @@ body {
 .model-dot { background: #4F46E5; box-shadow: 0 0 10px rgba(79,70,229,.40); }
 .sidebar-status { color: #059669; }
 .sidebar-status::before { background: #10B981; }
+
+/* ── DARK BLUE MATCHING SIDEBAR ──────────────────────────────────────── */
+.sidebar {
+  background: #132441;
+  border-right: 1px solid rgba(148,163,184,.22);
+  box-shadow: 8px 0 28px rgba(2,8,23,.24);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.sidebar-brand { background: #132441; border-bottom-color: rgba(148,163,184,.20); }
+.brand-name { color: #F8FAFC; }
+.brand-logo { color: #BAE6FD; background: #183A5C; border-color: #25638D; box-shadow: 0 5px 14px rgba(14,165,233,.14); }
+.brand-version { color: #C4B5FD; background: rgba(99,102,241,.16); border-color: rgba(129,140,248,.32); }
+.nav-item { color: #A7B8CF; border-color: transparent; }
+.nav-item:hover { color: #FFFFFF; background: #1B3355; border-color: rgba(148,163,184,.20); }
+.nav-item.active { color: #E0F2FE; background: #1D4164; border-color: rgba(56,189,248,.34); box-shadow: inset 3px 0 #38BDF8, 0 5px 14px rgba(2,8,23,.18); }
+.nav-item.active svg { color: #38BDF8; }
+.sidebar-footer { border-top-color: rgba(148,163,184,.20); }
+.ai-model-badge { color: #94A3B8; }
+.model-dot { background: #38BDF8; box-shadow: 0 0 10px rgba(56,189,248,.45); }
+.sidebar-status { color: #34D399; }
+.sidebar-status::before { background: #34D399; }
