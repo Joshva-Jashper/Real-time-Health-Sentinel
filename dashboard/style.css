@@ -1773,3 +1773,18 @@ body { color: #172033; background-color: #EEF3FA; background-image: radial-gradi
 .modal-box { background: rgba(248,250,252,.91); border-color: rgba(71,85,105,.22); }
 .score-num { background: linear-gradient(135deg,#3730A3,#0891B2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .brand-logo { background: rgba(56,189,248,.13); border-color: rgba(14,165,233,.30); }
+
+/* ── LIGHT PURPLE GLASS CANVAS ───────────────────────────────────────── */
+:root { --bg: #F3EEFA; --bg2: #EAE1F5; }
+html { background: #F3EEFA; }
+body {
+  background-color: #F3EEFA;
+  background-image: radial-gradient(ellipse 48% 44% at 8% 3%, rgba(139,92,246,.20), transparent 72%), radial-gradient(ellipse 42% 40% at 94% 88%, rgba(192,132,252,.18), transparent 70%), linear-gradient(135deg,#F3EEFA 0%,#ECE4F7 52%,#F7F2FC 100%);
+}
+.sidebar { background: rgba(249,246,252,.78); }
+.sidebar-brand, .topbar { background: rgba(255,255,255,.70); }
+.nav-item:hover { background: rgba(139,92,246,.08); }
+.nav-item.active { color: #5B21B6; background: rgba(139,92,246,.13); border-color: rgba(124,58,237,.25); box-shadow: inset 3px 0 #7C3AED, 0 0 20px rgba(124,58,237,.08); }
+.nav-item.active svg { color: #7C3AED; }
+.card:hover, .stat-card:hover { border-color: rgba(124,58,237,.32); box-shadow: 0 10px 36px rgba(76,29,149,.14), 0 0 22px rgba(139,92,246,.07); }
+.data-table tbody tr:hover:not(.empty-row) { background: rgba(139,92,246,.09); box-shadow: inset 3px 0 #7C3AED; }
