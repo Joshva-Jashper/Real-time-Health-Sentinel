@@ -1880,3 +1880,13 @@ body {
 .badge-purple, .secondary-badge { color: #A855F7; background: rgba(168,85,247,.15); border-color: rgba(168,85,247,.34); }
 .modal-backdrop { background: rgba(3,2,8,.62); }
 .modal-box { background: rgba(17,16,29,.90); border-color: rgba(255,255,255,.14); }
+
+/* ── PURPLE & BLACK GLASS CANVAS ─────────────────────────────────────── */
+:root { --bg: #090611; --bg2: #160D25; }
+html { background: #090611; }
+body {
+  background-color: #090611;
+  background-image: radial-gradient(ellipse 55% 52% at 12% 8%, rgba(126,34,206,.30), transparent 68%), radial-gradient(ellipse 45% 48% at 88% 92%, rgba(88,28,135,.24), transparent 70%), linear-gradient(135deg,#090611 0%,#160B25 48%,#050408 100%);
+}
+.sidebar { background: rgba(9,6,17,.76); }
+.sidebar-brand, .topbar { background: rgba(20,11,35,.68); }
