@@ -1890,3 +1890,13 @@ body {
 }
 .sidebar { background: rgba(9,6,17,.76); }
 .sidebar-brand, .topbar { background: rgba(20,11,35,.68); }
+
+/* ── PLAIN PURPLE & BLACK CANVAS ─────────────────────────────────────── */
+:root { --bg: #12091F; --bg2: #1E1030; }
+html { background: #12091F; }
+body {
+  background-color: #12091F;
+  background-image: linear-gradient(135deg, #2A1242 0%, #180B2B 42%, #09050F 100%);
+}
+.sidebar { background: rgba(9,5,15,.82); }
+.sidebar-brand, .topbar { background: rgba(25,12,42,.78); }
