@@ -1908,3 +1908,45 @@ body {
   background: #0F1B33;
   background-image: none;
 }
+
+/* ── PROFESSIONAL LIGHT SIDEBAR ──────────────────────────────────────── */
+.sidebar {
+  background: rgba(248,250,252,.96);
+  border-right: 1px solid rgba(148,163,184,.30);
+  box-shadow: 8px 0 28px rgba(2,8,23,.18);
+  backdrop-filter: blur(20px) saturate(135%);
+  -webkit-backdrop-filter: blur(20px) saturate(135%);
+}
+.sidebar-brand {
+  background: rgba(255,255,255,.72);
+  border-bottom: 1px solid rgba(148,163,184,.22);
+}
+.brand-name { color: #172033; }
+.brand-logo {
+  color: #3730A3;
+  background: #EEF2FF;
+  border: 1px solid #C7D2FE;
+  box-shadow: 0 5px 14px rgba(79,70,229,.12);
+}
+.brand-version { color: #4C1D95; background: #F3E8FF; border-color: #DDD6FE; }
+.nav-item {
+  color: #64748B;
+  border: 1px solid transparent;
+}
+.nav-item:hover {
+  color: #1E293B;
+  background: #F1F5F9;
+  border-color: #E2E8F0;
+}
+.nav-item.active {
+  color: #3730A3;
+  background: #EEF2FF;
+  border-color: #C7D2FE;
+  box-shadow: inset 3px 0 #4F46E5, 0 5px 14px rgba(79,70,229,.10);
+}
+.nav-item.active svg { color: #4F46E5; }
+.sidebar-footer { border-top-color: rgba(148,163,184,.22); }
+.ai-model-badge { color: #64748B; }
+.model-dot { background: #4F46E5; box-shadow: 0 0 10px rgba(79,70,229,.40); }
+.sidebar-status { color: #059669; }
+.sidebar-status::before { background: #10B981; }
