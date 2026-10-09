@@ -85,3 +85,27 @@ def test_stable_label():
     }
     label = label_test(curr_result, "run_curr_003")
     assert label == "STABLE"
+
+
+def test_summary_accumulates_mixed_new_passed_and_failed_tests():
+    """A first run with 11 passes and 11 failures has 22 new tests."""
+    run_id = "run_mixed_new_022"
+    for index in range(11):
+        store_result({
+            "test_name": f"tests/test_new.py::test_pass_{index}",
+            "status": "PASSED",
+            "error_msg": None,
+            "duration": 0.001,
+        }, run_id, "NEW_TEST")
+    for index in range(11):
+        store_result({
+            "test_name": f"tests/test_new.py::test_fail_{index}",
+            "status": "FAILED",
+            "error_msg": "AssertionError",
+            "duration": 0.001,
+        }, run_id, "NEW_TEST")
+
+    summary = get_regression_summary(run_id)
+
+    assert summary["NEW_TEST"] == 22
+    assert summary["NEWLY_FAILING"] == 11

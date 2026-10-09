@@ -2,7 +2,10 @@ import duckdb
 import hashlib
 import os
 import platform
+import shutil
 import subprocess
+import sys
+from contextvars import ContextVar
 import sys
 import threading
 from datetime import datetime
@@ -10,6 +13,13 @@ from testsentry.fingerprinter import fingerprint
 
 
 DB_PATH = os.path.join(os.getcwd(), "testsentry.db")
+_dashboard_requested = os.getenv("TESTSENTRY_READ_ONLY", "false").lower() in {"1", "true", "yes", "on"}
+_pytest_process = "pytest" in os.path.basename(sys.argv[0]).lower() or any(
+    "pytest" == arg or arg.endswith("/pytest") for arg in sys.argv[:2]
+)
+READ_ONLY = _dashboard_requested and not _pytest_process
+SNAPSHOT_PATH = f"{DB_PATH}.dashboard-snapshot"
+dashboard_request_token: ContextVar[object | None] = ContextVar("dashboard_request_token", default=None)
 # Namespace cache entries by project; an explicit value supports shared deployments.
 CACHE_NAMESPACE = os.getenv("TESTSENTRY_CACHE_NAMESPACE", os.path.abspath(os.getcwd()))
 
@@ -56,6 +66,28 @@ def get_connection(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     other's result sets.  The connection is lazily created and automatically
     re-opened if it was closed (e.g., by test code calling conn.close()).
     """
+    if READ_ONLY:
+        request_token = dashboard_request_token.get()
+        old = getattr(_thread_local, "conn", None)
+        old_token = getattr(_thread_local, "request_token", None)
+        if old is not None and request_token is not None and old_token is not request_token:
+            try:
+                old.close()
+            except Exception:
+                pass
+            _thread_local.conn = None
+        if getattr(_thread_local, "conn", None) is None:
+            # Never attach the dashboard to the live database. On some
+            # DuckDB builds even read-only live attachments conflict with
+            # pytest. The writer refreshes this snapshot after each result.
+            if not os.path.exists(SNAPSHOT_PATH):
+                raise RuntimeError(
+                    f"Dashboard snapshot is missing: {SNAPSHOT_PATH}. Start the dashboard once before pytest."
+                )
+            _thread_local.conn = duckdb.connect(SNAPSHOT_PATH, read_only=True)
+        _thread_local.request_token = request_token
+        return _thread_local.conn
+
     conn = getattr(_thread_local, "conn", None)
     if conn is not None:
         # Probe the connection — if it was closed externally, re-open it.
@@ -66,10 +98,7 @@ def get_connection(read_only: bool = False) -> duckdb.DuckDBPyConnection:
             _thread_local.conn = None
 
     if conn is None:
-        try:
-            conn = duckdb.connect(DB_PATH, read_only=False)
-        except Exception:
-            conn = duckdb.connect(DB_PATH, read_only=True)
+        conn = duckdb.connect(DB_PATH, read_only=(read_only or READ_ONLY))
         _thread_local.conn = conn
     return conn
 
@@ -80,6 +109,16 @@ def init_db():
     Called once when TestSentry starts.
     """
     conn = get_connection()
+    if READ_ONLY:
+        # Pytest owns the DuckDB write lock while a run is active. The
+        # dashboard only observes committed rows and must not mutate schema.
+        try:
+            conn.execute("SELECT 1 FROM test_runs LIMIT 1").fetchone()
+        except Exception as exc:
+            raise RuntimeError(
+                f"Read-only dashboard database is not initialized: {DB_PATH}"
+            ) from exc
+        return
     conn.execute("""
         CREATE TABLE IF NOT EXISTS test_runs (
             run_id      VARCHAR,
@@ -92,7 +131,8 @@ def init_db():
             phase       VARCHAR DEFAULT 'call',
             timestamp   TIMESTAMP,
             code_revision VARCHAR,
-            environment_signature VARCHAR
+            environment_signature VARCHAR,
+            evidence_dir VARCHAR
         )
     """)
     try:
@@ -111,6 +151,7 @@ def init_db():
     for col_def in [
         ("code_revision", "VARCHAR"),
         ("environment_signature", "VARCHAR"),
+        ("evidence_dir", "VARCHAR"),
     ]:
         try:
             conn.execute(f"ALTER TABLE test_runs ADD COLUMN {col_def[0]} {col_def[1]}")
@@ -167,8 +208,36 @@ def init_db():
             conn.execute(f"ALTER TABLE triage_cache ADD COLUMN {col_def[0]} {col_def[1]}")
         except Exception:
             pass  # column already exists
+    _refresh_dashboard_snapshot()
     pass  # shared connection — do not close
     print("[TestSentry] Database initialized at testsentry.db")
+
+
+def _refresh_dashboard_snapshot():
+    """Create a read-only copy for dashboard readers when DuckDB is locked."""
+    if READ_ONLY or not os.path.exists(DB_PATH):
+        return
+    try:
+        conn = getattr(_thread_local, "conn", None)
+        if conn is None:
+            return
+        temp_snapshot = f"{SNAPSHOT_PATH}.tmp"
+        if os.path.exists(temp_snapshot):
+            os.remove(temp_snapshot)
+        # Copy committed tables through DuckDB rather than copying the live
+        # file bytes. A raw file copy can catch pages mid-write and produce
+        # corrupted values for dashboard readers.
+        attach_path = temp_snapshot.replace("'", "''")
+        conn.execute(f"ATTACH '{attach_path}' AS dashboard_snapshot")
+        for table in ("test_runs", "run_metadata", "triage_events", "triage_cache", "triage_cache_lock"):
+            conn.execute(
+                f'CREATE TABLE dashboard_snapshot."{table}" AS SELECT * FROM main."{table}"'
+            )
+        conn.execute("DETACH dashboard_snapshot")
+        os.replace(temp_snapshot, SNAPSHOT_PATH)
+    except Exception:
+        # Snapshot refresh is optional; never fail a test because of it.
+        pass
 
 
 def store_result(result: dict, run_id: str, label: str = "NEW_TEST", phase: str = "call"):
@@ -179,11 +248,12 @@ def store_result(result: dict, run_id: str, label: str = "NEW_TEST", phase: str 
         conn.execute("""
             INSERT INTO test_runs
                 (run_id, test_name, status, duration, error_msg, fingerprint, label, phase,
-                 timestamp, code_revision, environment_signature)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 timestamp, code_revision, environment_signature, evidence_dir)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, [run_id, result["test_name"], result["status"], result.get("duration", 0),
               result.get("error_msg"), fp, label, phase, datetime.now(),
-              CODE_REVISION, ENVIRONMENT_SIGNATURE])
+              CODE_REVISION, ENVIRONMENT_SIGNATURE, result.get("evidence_dir")])
+        _refresh_dashboard_snapshot()
 
 
 def store_triage_event(run_id: str | None, fp: str, backend: str, cache_hit: bool):
@@ -193,16 +263,37 @@ def store_triage_event(run_id: str | None, fp: str, backend: str, cache_hit: boo
     """, [run_id, fp, backend, cache_hit, not cache_hit])
 
 
+def start_run_metadata(run_id: str, started_at: datetime):
+    """Create an in-progress run row so the dashboard can monitor it live."""
+    conn = get_connection()
+    conn.execute("""
+        INSERT INTO run_metadata (run_id, started_at, finished_at, total_tests, passed, failed)
+        VALUES (?, ?, NULL, 0, 0, 0)
+    """, [run_id, started_at])
+    _refresh_dashboard_snapshot()
+
+
 def store_run_metadata(run_id: str, started_at: datetime, finished_at: datetime, total: int, passed: int, failed: int):
     """
     Record complete run session metadata in DuckDB.
     """
     conn = get_connection()
+    exists = conn.execute(
+        "SELECT 1 FROM run_metadata WHERE run_id = ? LIMIT 1", [run_id]
+    ).fetchone()
     conn.execute("""
-        INSERT INTO run_metadata
-            (run_id, started_at, finished_at, total_tests, passed, failed)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, [run_id, started_at, finished_at, total, passed, failed])
+        UPDATE run_metadata
+        SET started_at = ?, finished_at = ?, total_tests = ?, passed = ?, failed = ?
+        WHERE run_id = ?
+    """, [started_at, finished_at, total, passed, failed, run_id]).fetchone()
+    # Preserve compatibility with runs created before live lifecycle tracking.
+    if exists is None:
+        conn.execute("""
+            INSERT INTO run_metadata
+                (run_id, started_at, finished_at, total_tests, passed, failed)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, [run_id, started_at, finished_at, total, passed, failed])
+    _refresh_dashboard_snapshot()
     pass  # shared connection — do not close
 
 

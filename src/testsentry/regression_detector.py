@@ -39,7 +39,10 @@ def get_regression_summary(run_id: str) -> dict:
     )}
     for label, status, count in rows:
         if label in summary:
-            summary[label] = count
+            # A label can appear in multiple status groups in the same run
+            # (for example, 11 passed NEW_TEST rows and 11 failed NEW_TEST
+            # rows). Accumulate instead of overwriting the previous group.
+            summary[label] += count
         if label == "NEW_TEST" and status == "FAILED":
             summary["NEWLY_FAILING"] += count
     return summary

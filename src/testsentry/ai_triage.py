@@ -17,9 +17,15 @@ from dotenv import load_dotenv
 from langfuse import get_client
 from pydantic import BaseModel, Field, field_validator
 
-from testsentry.collector import cache_lookup, cache_store, store_triage_event
+from testsentry import collector
 from testsentry.evidence import redact_text
 from testsentry.fingerprinter import fingerprint
+
+# Compatibility hooks retained for integrations and tests that monkeypatch
+# the persistence functions directly.
+cache_lookup = collector.cache_lookup
+cache_store = collector.cache_store
+store_triage_event = collector.store_triage_event
 
 load_dotenv()
 langfuse = get_client()
@@ -243,12 +249,13 @@ def triage_with_gpt(result: Mapping[str, Any], *, client: Any = None) -> dict[st
         return None
 
     fp = fingerprint(error_msg)
-    cached = cache_lookup(fp)
+    cached = None if collector.READ_ONLY else cache_lookup(fp)
     backend = "ollama" if TRIAGE_BACKEND == "ollama" else "openai"
     if cached:
         cached["cache_hit"] = True
         cached["model_used"] = "cache"
-        store_triage_event(result.get("run_id"), fp, backend, True)
+        if not collector.READ_ONLY:
+            store_triage_event(result.get("run_id"), fp, backend, True)
         return cached
 
     client = client or _client()
@@ -272,8 +279,9 @@ def triage_with_gpt(result: Mapping[str, Any], *, client: Any = None) -> dict[st
                 print(f"[TestSentry] GPT-5 escalation failed; keeping mini result: {exc}")
         selected["cache_hit"] = False
         selected["model_used"] = model_used
-        cache_store(fp, selected)
-        store_triage_event(result.get("run_id"), fp, backend, False)
+        if not collector.READ_ONLY:
+            cache_store(fp, selected)
+            store_triage_event(result.get("run_id"), fp, backend, False)
         return selected
     except Exception as exc:
         print(f"[TestSentry] GPT triage failed: {exc}")

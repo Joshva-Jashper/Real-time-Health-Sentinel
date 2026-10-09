@@ -10,13 +10,22 @@ let allTestResults = [];
 let historyChart   = null;
 let passRateChart  = null;
 let scoreRingChart = null;
+let failureFrequencyChart = null;
+let qualityTrendChart = null;
 
 window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("tests-tbody").addEventListener("click", (event) => {
     const button = event.target.closest("[data-triage]");
     if (button) triggerTriage(button.dataset.testName, button.dataset.errorMsg);
+    const evidence = event.target.closest("[data-evidence]");
+    if (evidence) openEvidence(evidence.dataset.testName);
   });
   loadAll();
+  const liveToggle = document.getElementById("auto-refresh-toggle");
+  if (liveToggle) {
+    liveToggle.checked = true;
+    toggleAutoRefresh(liveToggle);
+  }
 });
 
 async function loadAll() {
@@ -32,6 +41,7 @@ async function loadAll() {
         loadRisk(),
         loadAiCache(),
         loadHistory(),
+        loadLive(),
       ]);
       setFreshness(`Updated ${new Date().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}`, "live");
     }
@@ -227,10 +237,47 @@ function renderTestsTable(rows) {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
             Triage
           </button>
+          ${r.evidence_available ? `<button class="btn-secondary" type="button" data-evidence data-test-name="${esc(r.test_name)}">Evidence</button>` : ""}
         ` : '—'}
       </td>
     </tr>
   `).join("");
+}
+
+async function loadLive() {
+  const data = await apiFetch("/api/live") || {};
+  const pill = document.getElementById("live-pill");
+  if (!pill) return;
+  const running = Boolean(data.running);
+  pill.textContent = running ? "RUNNING" : "IDLE";
+  pill.className = `live-pill ${running ? "running" : ""}`;
+  document.getElementById("live-completed").textContent = data.completed || 0;
+  document.getElementById("live-passed").textContent = data.passed || 0;
+  document.getElementById("live-failed").textContent = data.failed || 0;
+  document.getElementById("live-total").textContent = data.total || 0;
+  document.getElementById("live-progress-fill").style.width = `${data.progress_pct || 0}%`;
+  document.getElementById("live-message").textContent = running ? "Test results are arriving live…" : "No test session is currently running.";
+}
+
+async function openEvidence(testName) {
+  if (!currentRunId) return;
+  const body = document.getElementById("evidence-body");
+  body.innerHTML = `<div class="empty-row">Loading evidence…</div>`;
+  document.getElementById("evidence-modal").classList.add("open");
+  const data = await apiFetch(`/api/evidence/${encodeURIComponent(currentRunId)}?test_name=${encodeURIComponent(testName)}`);
+  if (!data) { body.innerHTML = `<div class="empty-row">No evidence bundle found.</div>`; return; }
+  const files = data.files || [];
+  const screenshot = data.file_urls?.["screenshot.png"];
+  const page = data.file_urls?.["page.html"];
+  body.innerHTML = `
+    <div class="triage-block"><div class="triage-lbl">Failed test</div><div class="triage-val mono">${esc(testName)}</div></div>
+    <div class="evidence-actions"><a class="btn-primary" href="${esc(data.download_url)}">Download evidence bundle</a>${files.map(name => `<a class="btn-secondary" href="${esc(data.file_urls[name])}" target="_blank" download>${esc(name)}</a>`).join("")}</div>
+    ${screenshot ? `<div class="evidence-preview"><div class="triage-lbl">Screenshot</div><img src="${esc(screenshot)}" alt="Failure screenshot" /></div>` : ""}
+    ${page ? `<div class="evidence-preview"><div class="triage-lbl">DOM snapshot</div><iframe src="${esc(page)}" title="DOM snapshot"></iframe></div>` : ""}
+    <div class="triage-block"><div class="triage-lbl">Timeline</div><div class="timeline">${(data.timeline || []).map(item => `<div class="timeline-item"><span>${esc(item.phase)}</span><strong>${esc(item.status)}</strong><small>${esc(item.timestamp)}</small></div>`).join("") || "No timeline recorded."}</div></div>`;
+}
+function closeEvidenceModal(e) {
+  if (e.target.id === "evidence-modal") document.getElementById("evidence-modal").classList.remove("open");
 }
 
 async function triggerTriage(test_name, error_msg) {
@@ -372,7 +419,7 @@ async function loadAiCache() {
 }
 
 async function loadHistory() {
-  const data = await apiFetch("/api/history?limit=20") || [];
+  const data = await apiFetch("/api/analytics?limit=20") || [];
 
   const tbody = document.getElementById("history-tbody");
   tbody.innerHTML = [...data].reverse().map(r => `
@@ -389,6 +436,9 @@ async function loadHistory() {
   const labels = data.map(r => r.run_id.substring(0,6));
   const scores = data.map(r => r.total_score);
   const passes = data.map(r => r.pass_rate);
+  const failures = data.map(r => r.failure_frequency);
+  const durations = data.map(r => r.avg_duration);
+  const flaky = data.map(r => r.flaky_count);
 
   Chart.defaults.color = '#64748b';
   Chart.defaults.font.family = "'Inter', sans-serif";
@@ -434,12 +484,33 @@ async function loadHistory() {
     },
     options: chartDefaults
   });
+  const ctxF = document.getElementById("failureFrequencyChart")?.getContext("2d");
+  if (ctxF) {
+    if (failureFrequencyChart) failureFrequencyChart.destroy();
+    failureFrequencyChart = new Chart(ctxF, {
+      type: "line",
+      data: { labels, datasets: [{ label: "Failure %", data: failures, borderColor: "#ef4444", backgroundColor: "rgba(239,68,68,.12)", fill: true, tension: .35 }] },
+      options: chartDefaults
+    });
+  }
+  const ctxQ = document.getElementById("qualityTrendChart")?.getContext("2d");
+  if (ctxQ) {
+    if (qualityTrendChart) qualityTrendChart.destroy();
+    qualityTrendChart = new Chart(ctxQ, {
+      type: "line",
+      data: { labels, datasets: [
+        { label: "Duration (s)", data: durations, borderColor: "#a78bfa", yAxisID: "y" },
+        { label: "Flaky tests", data: flaky, borderColor: "#f59e0b", yAxisID: "y1" }
+      ] },
+      options: { ...chartDefaults, plugins: { ...chartDefaults.plugins, legend: { display: true, labels: { color: "#cbd5e1" } } }, scales: { x: chartDefaults.scales.x, y: { ...chartDefaults.scales.y, min: 0, max: undefined }, y1: { position: "right", grid: { drawOnChartArea: false }, min: 0 } } }
+    });
+  }
 }
 
 // ── Helpers ──
 async function apiFetch(path) {
   try {
-    const res = await fetch(`${API}${path}`);
+    const res = await fetch(`${API}${path}`, { cache: "no-store" });
     if (!res.ok) throw new Error(res.statusText);
     setConnectionStatus(true);
     return await res.json();

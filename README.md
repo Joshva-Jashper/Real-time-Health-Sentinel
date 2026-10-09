@@ -354,7 +354,7 @@ Run the local equivalent:
 ```bash
 python -m pytest tests/ -q
 ```
-
+gi
 The current repository suite contains **79 passing tests** with one non-blocking dependency warning in the verified environment.
 
 ---

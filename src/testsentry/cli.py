@@ -1,3 +1,4 @@
+import os
 import click
 from testsentry.collector import get_connection
 
@@ -294,6 +295,28 @@ def dashboard(port, host):
 
     # Auto-kill any stale process holding the port before starting
     _free_port_if_in_use(port)
+    # DuckDB permits one writer. The dashboard only reads test history, so it
+    # must not take the writer lock away from a concurrent pytest process.
+    from testsentry import collector
+    try:
+        # Seed the first snapshot when the dashboard is started before pytest.
+        # If pytest already owns the lock, this is skipped and the existing
+        # snapshot is used instead.
+        collector.init_db()
+    except Exception:
+        pass
+    finally:
+        # Do not carry the temporary writer connection into Uvicorn. The API
+        # startup will reopen the database read-only or use the snapshot.
+        connection = getattr(collector._thread_local, "conn", None)
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
+        collector._thread_local.conn = None
+    os.environ["TESTSENTRY_READ_ONLY"] = "true"
+    collector.READ_ONLY = True
 
     try:
         import uvicorn

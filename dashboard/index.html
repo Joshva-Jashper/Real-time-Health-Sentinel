@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=black-layout-2" />
 </head>
 <body>
 
@@ -18,7 +18,7 @@
     <div class="brand-logo">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V7L12 2z" fill="url(#lg1)"/><defs><linearGradient id="lg1" x1="3" y1="2" x2="21" y2="23.35" gradientUnits="userSpaceOnUse"><stop stop-color="#6c63ff"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs></svg>
     </div>
-    <span class="brand-name">TestSentry</span>
+    <div class="brand-copy"><span class="brand-name">TestSentry</span><span class="brand-subtitle">QUALITY GATE</span></div>
     <span class="brand-version">v2.1</span>
   </div>
 
@@ -89,6 +89,21 @@
         <p class="section-description">A concise view of reliability, regressions, flaky behavior, and ownership for the selected run.</p>
       </div>
       <span class="data-scope" id="data-scope">Selected run</span>
+    </div>
+    <div class="quality-strip" aria-label="Test execution pipeline">
+      <div class="quality-strip-label"><span class="signal-pulse"></span><span>QUALITY GATE</span><strong>ACTIVE</strong></div>
+      <div class="pipeline-track" aria-hidden="true">
+        <span class="pipeline-step done"><i>✓</i>COLLECT</span><span class="pipeline-line"></span>
+        <span class="pipeline-step done"><i>✓</i>CAPTURE</span><span class="pipeline-line"></span>
+        <span class="pipeline-step current"><i>◎</i>ANALYZE</span><span class="pipeline-line"></span>
+        <span class="pipeline-step"><i>○</i>REPORT</span>
+      </div>
+      <span class="quality-strip-code">RUN / OBSERVE / IMPROVE</span>
+    </div>
+    <div class="live-monitor card" id="live-monitor" aria-live="polite">
+      <div class="live-monitor-head"><div><h2 class="card-title">Live Test Monitoring</h2><p class="card-sub">Updates while the pytest session is running.</p></div><span class="live-pill" id="live-pill">IDLE</span></div>
+      <div class="live-progress"><div class="live-progress-fill" id="live-progress-fill"></div></div>
+      <div class="live-metrics"><span><strong id="live-completed">0</strong> completed</span><span class="live-pass"><strong id="live-passed">0</strong> passed</span><span class="live-fail"><strong id="live-failed">0</strong> failed</span><span><strong id="live-total">0</strong> total</span><span id="live-message">Waiting for a test run…</span></div>
     </div>
     <div class="overview-hero">
       <div class="hero-ring-col">
@@ -303,6 +318,10 @@
         <div class="chart-wrap"><canvas id="passRateChart"></canvas></div>
       </div>
     </div>
+    <div class="two-col analytics-grid">
+      <div class="card"><div class="card-title-row"><h2 class="card-title">Failure Frequency</h2><span class="card-title-icon">⚠️</span></div><div class="chart-wrap"><canvas id="failureFrequencyChart"></canvas></div></div>
+      <div class="card"><div class="card-title-row"><h2 class="card-title">Duration & Flaky History</h2><span class="card-title-icon">⏱</span></div><div class="chart-wrap"><canvas id="qualityTrendChart"></canvas></div></div>
+    </div>
     <div class="card" style="margin-top:20px">
       <div class="card-title-row"><div><h2 class="card-title">All Runs</h2><p class="card-sub">Compare health and pass-rate movement across recent runs.</p></div><span class="card-title-icon" aria-hidden="true">📋</span></div>
       <div class="table-wrap">
@@ -325,7 +344,12 @@
     <div class="modal-body" id="modal-body"></div>
   </div>
 </div>
-
+<div id="evidence-modal" class="modal-overlay" onclick="closeEvidenceModal(event)">
+  <div class="modal-box evidence-modal-box" role="dialog" aria-modal="true" aria-labelledby="evidence-modal-title">
+    <div class="modal-header"><h3 class="modal-title" id="evidence-modal-title">Failure Evidence</h3><button class="modal-close" aria-label="Close evidence" onclick="document.getElementById('evidence-modal').classList.remove('open')">✕</button></div>
+    <div class="modal-body" id="evidence-body"><div class="empty-row">Loading evidence…</div></div>
+  </div>
+</div>
 <script src="/static/app.js"></script>
 </body>
 </html>
