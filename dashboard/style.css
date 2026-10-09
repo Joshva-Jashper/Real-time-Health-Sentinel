@@ -1900,3 +1900,11 @@ body {
 }
 .sidebar { background: rgba(9,5,15,.82); }
 .sidebar-brand, .topbar { background: rgba(25,12,42,.78); }
+
+/* ── FLAT DARK BLUE CANVAS ───────────────────────────────────────────── */
+:root { --bg: #0F1B33; --bg2: #132441; }
+html { background: #0F1B33; }
+body {
+  background: #0F1B33;
+  background-image: none;
+}
