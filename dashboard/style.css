@@ -1788,3 +1788,42 @@ body {
 .nav-item.active svg { color: #7C3AED; }
 .card:hover, .stat-card:hover { border-color: rgba(124,58,237,.32); box-shadow: 0 10px 36px rgba(76,29,149,.14), 0 0 22px rgba(139,92,246,.07); }
 .data-table tbody tr:hover:not(.empty-row) { background: rgba(139,92,246,.09); box-shadow: inset 3px 0 #7C3AED; }
+
+/* ── TWILIGHT PURPLE GLASS CANVAS ────────────────────────────────────── */
+:root {
+  --bg: #2A243D; --bg2: #342D4A; --surface: rgba(255,255,255,.095); --surface-h: rgba(255,255,255,.15);
+  --surface-solid: rgba(47,39,68,.92); --surface-raised: rgba(255,255,255,.12); --border: rgba(255,255,255,.16); --border-h: rgba(216,180,254,.38);
+  --text: #F8FAFC; --text2: rgba(248,250,252,.84); --text3: rgba(248,250,252,.62); --text-muted: rgba(248,250,252,.62);
+  --shadow: 0 8px 32px rgba(16,10,30,.30);
+}
+html { background: #2A243D; }
+body {
+  color: #F8FAFC;
+  background-color: #2A243D;
+  background-image: radial-gradient(ellipse 48% 44% at 8% 3%, rgba(139,92,246,.22), transparent 72%), radial-gradient(ellipse 42% 40% at 94% 88%, rgba(192,132,252,.13), transparent 70%), linear-gradient(135deg,#2A243D 0%,#332B49 52%,#27223A 100%);
+}
+.sidebar, .topbar, .card, .stat-card, .overview-hero, .live-monitor, .modal-box { background: rgba(47,39,68,.68); border-color: rgba(255,255,255,.16); box-shadow: 0 8px 32px rgba(16,10,30,.30); }
+.sidebar { background: rgba(32,26,49,.78); }
+.sidebar-brand, .topbar { background: rgba(48,40,69,.76); border-color: rgba(255,255,255,.13); }
+.brand-name, .page-title, .card-title, .overview-title, .stat-value, .data-table td, .modal-title, .topbar-title { color: #F8FAFC; }
+.brand-logo { background: rgba(167,139,250,.17); border-color: rgba(216,180,254,.36); box-shadow: 0 0 20px rgba(167,139,250,.14); }
+.brand-version { color: #D8B4FE; background: rgba(192,132,252,.14); border-color: rgba(216,180,254,.30); }
+.nav-item { color: rgba(248,250,252,.64); }
+.nav-item:hover { color: #FFFFFF; background: rgba(255,255,255,.08); }
+.nav-item.active { color: #F3E8FF; background: rgba(167,139,250,.16); border-color: rgba(216,180,254,.28); box-shadow: inset 3px 0 #A78BFA, 0 0 18px rgba(167,139,250,.09); }
+.nav-item.active svg { color: #C084FC; }
+.topbar-sub, .card-sub, .stat-label, .data-table th, .muted, .text-muted, .score-label, .hsc-lbl, .reg-lbl { color: rgba(248,250,252,.62); }
+.run-badge, .run-selector-wrap, .icon-btn, .data-scope, .btn-secondary, .search-input, .select-sm, input, select { color: rgba(248,250,252,.84); background: rgba(255,255,255,.075); border-color: rgba(255,255,255,.16); }
+.icon-btn:hover, .run-selector-wrap:hover, .btn-secondary:hover { color: #FFFFFF; background: rgba(255,255,255,.14); border-color: rgba(216,180,254,.38); }
+.search-input::placeholder, input::placeholder { color: rgba(248,250,252,.44); }
+.search-input:focus, .select-sm:focus, input:focus, select:focus { background: rgba(255,255,255,.12); border-color: rgba(192,132,252,.68); box-shadow: 0 0 0 3px rgba(192,132,252,.13); }
+.data-table th { background: rgba(255,255,255,.065); border-color: rgba(255,255,255,.12); }
+.data-table td { border-color: rgba(255,255,255,.10); }
+.data-table tbody tr:nth-child(even) { background: rgba(255,255,255,.025); }
+.data-table tbody tr:hover:not(.empty-row) { background: rgba(192,132,252,.10); box-shadow: inset 3px 0 #C084FC; }
+.overview-hero, .card, .stat-card { background: rgba(47,39,68,.68); }
+.card:hover, .stat-card:hover { border-color: rgba(216,180,254,.34); box-shadow: 0 10px 36px rgba(16,10,30,.38), 0 0 22px rgba(192,132,252,.07); }
+.reg-item, .ai-stat-row, .cache-bar-wrap, .triage-block, .evidence-preview, .timeline-item, .modal-header { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.13); }
+.modal-backdrop { background: rgba(15,10,27,.56); }
+.modal-box { background: rgba(47,39,68,.92); border-color: rgba(255,255,255,.20); }
+.score-num { background: linear-gradient(135deg,#E9D5FF,#67E8F9); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
