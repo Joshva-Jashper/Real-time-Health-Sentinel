@@ -1316,3 +1316,89 @@ body::after { background-image: linear-gradient(rgba(114, 220, 224, .035) 1px, t
 .search-input:focus, .select-sm:focus { border-color: #65deda; box-shadow: 0 0 0 3px rgba(38,198,200,.16); }
 .live-pill.running { color: #83efb3; border-color: rgba(98,223,164,.5); background: var(--green-g); box-shadow: 0 0 14px rgba(98,223,164,.2); }
 .timeline-item { border-left-color: var(--accent); background: rgba(8,20,26,.3); }
+
+/* ── COMPACT TEST WORKSPACE: fit dashboards; scroll only long data lists ── */
+#tab-overview { padding-top: 14px; }
+#tab-overview .section-intro { display: none; }
+#tab-overview .quality-strip { min-height: 46px; height: 46px; margin-bottom: 12px; padding: 9px 14px; overflow: hidden; }
+#tab-overview .pipeline-step { font-size: 10px; }
+#tab-overview .live-monitor { min-height: 0; margin-bottom: 12px; padding: 11px 16px; }
+#tab-overview .live-monitor-head { margin-bottom: 8px; }
+#tab-overview .live-monitor .card-title { font-size: 14px; }
+#tab-overview .live-monitor .card-sub { font-size: 11px; margin-top: 3px; }
+#tab-overview .live-progress { height: 6px; }
+#tab-overview .live-metrics { margin-top: 8px; font-size: 11px; gap: 12px; }
+#tab-overview .live-metrics strong { font-size: 12px; }
+#tab-overview .overview-hero { min-height: 218px; padding: 18px; margin-bottom: 14px; }
+#tab-overview .score-ring-wrap { width: 156px; height: 156px; }
+#tab-overview .score-num { font-size: 44px; }
+#tab-overview .score-label { font-size: 11px; }
+#tab-overview .grade-badge { font-size: 18px; padding: 3px 14px; }
+#tab-overview .hsc-icon { width: 34px; height: 34px; border-radius: 10px; }
+#tab-overview .hsc-val { font-size: 19px; }
+#tab-overview .hsc-lbl { font-size: 10px; }
+#tab-overview .hero-stat-card { padding: 7px 0; }
+#tab-overview .dim-row { grid-template-columns: 72px minmax(40px,1fr) 42px; gap: 6px; }
+#tab-overview .dim-label { font-size: 11px; }
+#tab-overview .dim-score-val { font-size: 10px; }
+#tab-overview .two-col { gap: 12px; }
+#tab-overview .card { padding: 16px; }
+#tab-overview .card-title { font-size: 14px; }
+#tab-overview .card-title-row { margin-bottom: 10px; }
+#tab-overview .regression-grid { gap: 8px; }
+#tab-overview .reg-item { min-height: 58px; padding: 9px 6px; border-radius: 12px; }
+#tab-overview .reg-num { font-size: 25px; }
+#tab-overview .reg-lbl { font-size: 10px; }
+#tab-overview .ai-stat-list { gap: 6px; margin-bottom: 10px; }
+#tab-overview .ai-stat-row { padding: 8px 10px; font-size: 11px; }
+#tab-overview .ai-val { font-size: 13px; }
+#tab-overview .cache-bar-wrap { padding: 9px 10px; }
+
+/* Test Results: title and search/filter controls share one clean row. */
+#tab-tests .card { padding: 16px; }
+#tab-tests .card-header-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
+#tab-tests .card-header-row .card-title-row { flex: 0 0 auto; margin: 0; align-items: center; }
+#tab-tests .card-header-row .card-title { line-height: 1.2; white-space: nowrap; }
+#tab-tests .filter-row { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex: 1 1 auto; }
+#tab-tests .search-wrap { flex: 1 1 220px; max-width: 260px; }
+#tab-tests .search-input { width: 100%; min-height: 34px; height: 34px; padding-top: 7px; padding-bottom: 7px; }
+#tab-tests .select-sm { min-height: 34px; height: 34px; padding: 7px 10px; font-size: 11px; }
+#tab-tests .data-table th, #tab-tests .data-table td { padding: 9px 11px; }
+
+/* Flakiness: compact summary, readable leaderboard, scroll only its long table. */
+#tab-flaky { padding-top: 16px; }
+#tab-flaky .stat-cards-row { gap: 10px; margin-bottom: 12px; }
+#tab-flaky .stat-card { min-height: 92px; padding: 12px 10px; border-radius: 15px; }
+#tab-flaky .stat-card-icon { font-size: 17px; margin-bottom: 5px; }
+#tab-flaky .stat-card-val { font-size: 27px; margin-bottom: 4px; }
+#tab-flaky .stat-card-lbl { font-size: 10px; }
+#tab-flaky > .card { padding: 16px; }
+#tab-flaky .card-title-row { margin-bottom: 8px; }
+#tab-flaky .card-sub { font-size: 11px; }
+#tab-flaky .table-wrap { max-height: calc(100vh - 300px); overflow-y: auto; }
+#tab-flaky .data-table th, #tab-flaky .data-table td { padding: 8px 10px; }
+
+/* History: compact charts fit the viewport; only All Runs becomes scrollable. */
+#tab-history { padding-top: 16px; }
+#tab-history .two-col { gap: 12px; }
+#tab-history .card { padding: 15px; }
+#tab-history .card-title-row { margin-bottom: 7px; }
+#tab-history .chart-wrap { height: 145px; margin-top: 8px; }
+#tab-history .analytics-grid { margin-top: 12px; }
+#tab-history > .card { margin-top: 12px !important; padding: 15px; }
+#tab-history > .card .table-wrap { max-height: 190px; overflow-y: auto; }
+#tab-history .data-table th, #tab-history .data-table td { padding: 8px 10px; }
+
+@media (max-width: 900px) and (min-width: 721px) {
+  #tab-overview .overview-hero { min-height: 0; }
+  #tab-tests .card-header-row { align-items: flex-start; }
+  #tab-tests .filter-row { flex-wrap: wrap; }
+}
+@media (max-width: 720px) {
+  #tab-tests .card-header-row { align-items: stretch; flex-direction: column; gap: 10px; }
+  #tab-tests .filter-row { justify-content: stretch; flex-wrap: wrap; }
+  #tab-tests .search-wrap { max-width: none; flex-basis: 100%; }
+  #tab-tests .select-sm { flex: 1 1 120px; }
+  #tab-overview .quality-strip { overflow-x: auto; }
+  #tab-history .chart-wrap { height: 130px; }
+}
