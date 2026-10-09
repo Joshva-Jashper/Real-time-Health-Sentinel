@@ -1410,3 +1410,33 @@ body::after { background-image: linear-gradient(rgba(114, 220, 224, .035) 1px, t
 /* Keep pipeline state available to the runtime, but remove the strip from
    the compact Overview presentation. */
 #tab-overview .quality-strip { display: none; }
+
+/* ── AI TRIAGE: compact, aligned evidence and fix columns ── */
+#tab-ai { padding-top: 16px; }
+#tab-ai > .card { padding: 16px; }
+#tab-ai .card-title-row { align-items: center; margin-bottom: 7px; }
+#tab-ai .card-title { font-size: 15px; line-height: 1.25; }
+#tab-ai .card-title-icon { flex: 0 0 auto; }
+#tab-ai > .card > .card-sub { display: inline-flex; align-items: center; margin: 0 0 12px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--accent-g); color: var(--text-muted); font-size: 10px; line-height: 1.2; }
+#tab-ai .table-wrap { max-height: calc(100vh - 230px); overflow: auto; }
+#tab-ai .data-table { min-width: 980px; table-layout: fixed; font-size: 12px; }
+#tab-ai .data-table th { padding: 8px 9px; font-size: 10px; letter-spacing: .35px; }
+#tab-ai .data-table td { padding: 9px; line-height: 1.3; vertical-align: middle; }
+#tab-ai .data-table th:nth-child(1), #tab-ai .data-table td:nth-child(1) { width: 125px; }
+#tab-ai .data-table th:nth-child(2), #tab-ai .data-table td:nth-child(2) { width: 145px; }
+#tab-ai .data-table th:nth-child(3), #tab-ai .data-table td:nth-child(3) { width: 100px; }
+#tab-ai .data-table th:nth-child(4), #tab-ai .data-table td:nth-child(4), #tab-ai .data-table th:nth-child(5), #tab-ai .data-table td:nth-child(5) { width: 245px; }
+#tab-ai .data-table th:nth-child(6), #tab-ai .data-table td:nth-child(6) { width: 150px; }
+#tab-ai .data-table th:nth-child(7), #tab-ai .data-table td:nth-child(7) { width: 55px; text-align: center; }
+#tab-ai .data-table .truncate { max-width: none !important; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; line-height: 1.35; }
+#tab-ai .data-table td:nth-child(4) .truncate { color: var(--text2); }
+#tab-ai .data-table td:nth-child(5) .truncate { color: var(--green); }
+#tab-ai .conf-bar-wrap { gap: 6px; }
+#tab-ai .conf-bar { width: 48px; height: 5px; }
+#tab-ai .conf-pct { font-size: 10px; }
+#tab-ai .badge { padding: 3px 7px; font-size: 10px; gap: 4px; }
+#tab-ai .empty-row td { padding: 34px !important; }
+@media (max-width: 720px) {
+  #tab-ai > .card { padding: 13px; }
+  #tab-ai .table-wrap { max-height: calc(100vh - 210px); }
+}
