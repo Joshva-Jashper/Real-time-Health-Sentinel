@@ -1440,3 +1440,86 @@ body::after { background-image: linear-gradient(rgba(114, 220, 224, .035) 1px, t
   #tab-ai > .card { padding: 13px; }
   #tab-ai .table-wrap { max-height: calc(100vh - 210px); }
 }
+
+/* ── BALANCED GLASS THEME: mid-bright testing workspace ── */
+:root {
+  --bg: #1a2631;
+  --bg2: #263743;
+  --surface: rgba(67, 87, 99, .72);
+  --surface-h: rgba(86, 111, 123, .9);
+  --surface-solid: #354955;
+  --surface-raised: rgba(76, 101, 113, .78);
+  --border: rgba(225, 244, 246, .22);
+  --border-h: rgba(170, 239, 236, .6);
+  --accent: #45c8c4;
+  --accent-2: #b9f1e7;
+  --accent-g: rgba(69, 200, 196, .2);
+  --green: #73e6a5;
+  --green-g: rgba(115, 230, 165, .2);
+  --yellow: #f5d17b;
+  --yellow-g: rgba(245, 209, 123, .2);
+  --red: #ff8792;
+  --red-g: rgba(255, 135, 146, .2);
+  --orange: #ffb47d;
+  --orange-g: rgba(255, 180, 125, .2);
+  --blue: #9bc9ff;
+  --text: #f5fbfb;
+  --text2: #d9e9eb;
+  --text3: #a9c0c5;
+  --text-muted: #bfd2d5;
+  --shadow: 0 18px 48px rgba(9, 22, 29, .24);
+}
+html { background: #1a2631; }
+body {
+  background-color: #1a2631;
+  background-image:
+    linear-gradient(rgba(209, 244, 244, .05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(209, 244, 244, .05) 1px, transparent 1px),
+    radial-gradient(700px 500px at 12% 0%, rgba(85, 190, 206, .22), transparent 68%),
+    radial-gradient(620px 480px at 88% 100%, rgba(99, 135, 214, .2), transparent 70%),
+    linear-gradient(135deg, #21313d, #17232d 70%);
+  background-size: 44px 44px, 44px 44px, auto, auto, auto;
+}
+body::before { background: radial-gradient(ellipse at center, rgba(255,255,255,.07), transparent 62%); opacity: .75; }
+body::after { background-image: linear-gradient(rgba(226,249,249,.028) 1px, transparent 1px), linear-gradient(90deg, rgba(226,249,249,.028) 1px, transparent 1px); opacity: .42; }
+.sidebar {
+  background: linear-gradient(180deg, rgba(57, 83, 96, .82), rgba(37, 55, 66, .84));
+  border-color: rgba(214, 242, 244, .3);
+  box-shadow: inset 0 1px rgba(255,255,255,.16), 0 18px 48px rgba(10,25,32,.25);
+  backdrop-filter: blur(26px) saturate(135%);
+  -webkit-backdrop-filter: blur(26px) saturate(135%);
+}
+.sidebar-brand { background: linear-gradient(180deg, rgba(76, 105, 117, .48), rgba(76, 105, 117, .16)); border-bottom-color: rgba(220,246,246,.2); }
+.brand-logo { background: linear-gradient(145deg, rgba(84,222,215,.38), rgba(255,255,255,.13)); border-color: rgba(205,249,245,.52); box-shadow: 0 0 22px rgba(69,200,196,.3); }
+.brand-subtitle { color: #c1f3ed; }
+.brand-version { background: rgba(255,255,255,.13); color: #e8ffff; border-color: rgba(220,248,247,.3); }
+.nav-item { color: #c5d6d9; }
+.nav-item:hover { color: #fff; background: rgba(225,249,248,.13); }
+.nav-item.active { color: #fff; background: linear-gradient(105deg, rgba(55,194,193,.52), rgba(98,152,193,.28)); border-color: rgba(216,251,248,.58); box-shadow: inset 3px 0 #a4f4e7, 0 8px 24px rgba(18,91,108,.24); }
+.nav-item.active .nav-icon { color: #bafcf0; filter: drop-shadow(0 0 8px rgba(115,236,222,.8)); }
+.sidebar-footer { border-top-color: rgba(220,246,246,.18); }
+.topbar { background: rgba(55, 75, 87, .7); border-color: rgba(224,247,247,.28); box-shadow: inset 0 1px rgba(255,255,255,.12), 0 14px 36px rgba(8,20,27,.2); backdrop-filter: blur(24px) saturate(135%); -webkit-backdrop-filter: blur(24px) saturate(135%); }
+.run-badge, .run-selector-wrap, .icon-btn { background: rgba(91, 115, 126, .55); border-color: rgba(224,247,247,.28); color: #f2ffff; }
+.icon-btn:hover, .run-selector-wrap:hover { border-color: rgba(200,251,245,.68); background: rgba(102,137,149,.7); box-shadow: 0 0 20px rgba(69,200,196,.2); }
+.freshness.live { color: #a3f4c2; }
+.eyebrow { color: #baf5ee; text-shadow: 0 0 16px rgba(69,200,196,.28); }
+.data-scope { background: rgba(112,160,171,.3); border-color: rgba(210,246,245,.34); color: #efffff; }
+.overview-hero, .card, .stat-card, .live-monitor { background-color: rgba(59, 80, 93, .72); background-image: linear-gradient(145deg, rgba(255,255,255,.12), rgba(255,255,255,.025) 56%, transparent); border-color: rgba(220,246,246,.28); box-shadow: inset 0 1px rgba(255,255,255,.11), 0 16px 42px rgba(8,20,28,.22); backdrop-filter: blur(22px) saturate(125%); -webkit-backdrop-filter: blur(22px) saturate(125%); }
+.overview-hero { background: linear-gradient(145deg, rgba(72,101,113,.76), rgba(49,68,80,.78)); }
+.overview-hero::after { background: radial-gradient(circle at 100% 50%, rgba(108,206,218,.2), transparent 70%); }
+.card:hover, .stat-card:hover { border-color: rgba(190,248,244,.52); box-shadow: 0 18px 48px rgba(8,20,28,.28), 0 0 24px rgba(69,200,196,.12); }
+.score-num { background: linear-gradient(135deg, #fff, #c6fff3); -webkit-background-clip: text; }
+.score-label, .hsc-lbl, .dim-label, .reg-lbl, .card-sub { color: #c4d9dc; }
+.dim-bar-bg, .cache-bar-bg, .live-progress { background: rgba(20,37,45,.38); border-color: rgba(220,246,246,.2); }
+.dim-bar-fill, .live-progress-fill { background: linear-gradient(90deg, #35bdbb, #b9f1e7); box-shadow: 0 0 15px rgba(69,200,196,.48); }
+.cache-bar-fill { background: linear-gradient(90deg, #37c5bd, #9be8b9); }
+.data-table th { background: linear-gradient(180deg, rgba(104,137,148,.8), rgba(69,95,107,.84)); color: #f0ffff; }
+.data-table td { color: #e0eff0; border-color: rgba(220,246,246,.16); }
+.data-table tbody tr:hover:not(.empty-row) { background: rgba(133,223,220,.11); box-shadow: inset 3px 0 #9af0e5; }
+.btn-primary { background: linear-gradient(135deg, #2ea9aa, #72ddd0); border-color: rgba(224,255,251,.66); color: #12353a; box-shadow: 0 6px 18px rgba(23,126,132,.22); }
+.btn-primary:hover { box-shadow: 0 0 22px rgba(69,200,196,.38), 0 7px 18px rgba(23,126,132,.26); }
+.btn-secondary { background: rgba(112,150,161,.35); border-color: rgba(220,246,246,.34); color: #efffff; }
+.search-input, .select-sm { background: rgba(30,53,63,.4); border-color: rgba(220,246,246,.3); color: #f4ffff; }
+.search-input::placeholder { color: #c0d4d8; }
+.search-input:focus, .select-sm:focus { border-color: #aaf5eb; box-shadow: 0 0 0 3px rgba(69,200,196,.2); }
+#tab-ai > .card > .card-sub { background: rgba(110,171,177,.24); color: #e3ffff; }
