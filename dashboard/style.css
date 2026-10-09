@@ -1406,3 +1406,7 @@ body::after { background-image: linear-gradient(rgba(114, 220, 224, .035) 1px, t
 /* Live monitoring remains available to the runtime, but is intentionally
    hidden from the compact Overview presentation. */
 #tab-overview .live-monitor { display: none; }
+
+/* Keep pipeline state available to the runtime, but remove the strip from
+   the compact Overview presentation. */
+#tab-overview .quality-strip { display: none; }
